@@ -1,6 +1,6 @@
 # Storage Performance Development Kit
 
-[![Build Status](https://travis-ci.org/spdk/spdk.svg?branch=master)](https://travis-ci.org/spdk/spdk)
+[![Build Status](https://api.travis-ci.com/mayadata-io/spdk.svg?token=wxhzDwuf7ZDLcgyf7JHZ&branch=master)
 
 NOTE: The SPDK mailing list has moved to a new location. Please visit
 [this URL](https://lists.linuxfoundation.org/mailman/listinfo/spdk) to subscribe
