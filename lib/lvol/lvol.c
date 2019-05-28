@@ -98,7 +98,7 @@ lvs_free(struct spdk_lvol_store *lvs)
 }
 
 static struct spdk_lvol *
-lvol_alloc(struct spdk_lvol_store *lvs, const char *name, bool thin_provision,
+lvol_alloc(struct spdk_lvol_store *lvs, const char *name, struct spdk_uuid *user_uuid, bool thin_provision,
 	   enum lvol_clear_method clear_method)
 {
 	struct spdk_lvol *lvol;
@@ -111,7 +111,11 @@ lvol_alloc(struct spdk_lvol_store *lvs, const char *name, bool thin_provision,
 	lvol->lvol_store = lvs;
 	lvol->clear_method = (enum blob_clear_method)clear_method;
 	snprintf(lvol->name, sizeof(lvol->name), "%s", name);
-	spdk_uuid_generate(&lvol->uuid);
+	if (user_uuid) {
+		spdk_uuid_copy(&lvol->uuid, user_uuid);
+	} else {
+		spdk_uuid_generate(&lvol->uuid);
+	}
 	spdk_uuid_fmt_lower(lvol->uuid_str, sizeof(lvol->uuid_str), &lvol->uuid);
 	spdk_uuid_fmt_lower(lvol->unique_id, sizeof(lvol->uuid_str), &lvol->uuid);
 
@@ -259,15 +263,6 @@ load_next_lvol(void *cb_arg, struct spdk_blob *blob, int lvolerrno)
 	}
 	spdk_uuid_fmt_lower(lvol->uuid_str, sizeof(lvol->uuid_str), &lvol->uuid);
 
-	if (!spdk_uuid_is_null(&lvol->uuid)) {
-		snprintf(lvol->unique_id, sizeof(lvol->unique_id), "%s", lvol->uuid_str);
-	} else {
-		spdk_uuid_fmt_lower(lvol->unique_id, sizeof(lvol->unique_id), &lvol->lvol_store->uuid);
-		value_len = strlen(lvol->unique_id);
-		snprintf(lvol->unique_id + value_len, sizeof(lvol->unique_id) - value_len, "_%"PRIu64,
-			 (uint64_t)blob_id);
-	}
-
 	rc = spdk_blob_get_xattr_value(blob, "name", (const void **)&attr, &value_len);
 	if (rc != 0 || value_len > SPDK_LVOL_NAME_MAX) {
 		SPDK_ERRLOG("Cannot assign lvol name\n");
@@ -277,6 +272,17 @@ load_next_lvol(void *cb_arg, struct spdk_blob *blob, int lvolerrno)
 	}
 
 	snprintf(lvol->name, sizeof(lvol->name), "%s", attr);
+	/*
+	 * unique_id becomes bdev.name which is why we use lvol name instead
+	 * of randomly generated uuid.
+	 */
+	if (snprintf(lvol->unique_id, sizeof(lvol->unique_id), "%s", lvol->name) < 0) {
+		/*
+		 * we don't care if name is longer than unique_id because
+		 * with mayastor that does not happen
+		 */
+		abort();
+	}
 
 	TAILQ_INSERT_TAIL(&lvs->lvols, lvol, link);
 
@@ -1071,6 +1077,18 @@ lvol_create_open_cb(void *cb_arg, struct spdk_blob *blob, int lvolerrno)
 
 	TAILQ_INSERT_TAIL(&lvol->lvol_store->lvols, lvol, link);
 
+	/*
+	 * unique_id becomes bdev.name which is why we use lvol name instead
+	 * of randomly generated uuid.
+	 */
+	if (snprintf(lvol->unique_id, sizeof(lvol->unique_id), "%s", lvol->name) < 0) {
+		/*
+		 * we don't care if name is longer than unique_id because
+		 * with mayastor that does not happen
+		 */
+		abort();
+	}
+
 	lvol->ref_count++;
 
 	assert(req->cb_fn != NULL);
@@ -1177,13 +1195,25 @@ lvs_verify_lvol_name(struct spdk_lvol_store *lvs, const char *name)
 
 int
 spdk_lvol_create(struct spdk_lvol_store *lvs, const char *name, uint64_t sz,
-		 bool thin_provision, enum lvol_clear_method clear_method, spdk_lvol_op_with_handle_complete cb_fn,
+		 bool thin_provision, enum lvol_clear_method clear_method,
+		 spdk_lvol_op_with_handle_complete cb_fn,
 		 void *cb_arg)
+{
+	return spdk_lvol_create_with_uuid(lvs, name, sz, thin_provision,
+					  clear_method, NULL, cb_fn, cb_arg);
+}
+
+int
+spdk_lvol_create_with_uuid(struct spdk_lvol_store *lvs, const char *name, uint64_t sz,
+			   bool thin_provision, enum lvol_clear_method clear_method,
+			   const char *uuid, spdk_lvol_op_with_handle_complete cb_fn,
+			   void *cb_arg)
 {
 	struct spdk_lvol_with_handle_req *req;
 	struct spdk_blob_store *bs;
 	struct spdk_lvol *lvol;
 	struct spdk_blob_opts opts;
+	struct spdk_uuid parsed_uuid;
 	char *xattr_names[] = {LVOL_NAME, "uuid"};
 	int rc;
 
@@ -1207,7 +1237,15 @@ spdk_lvol_create(struct spdk_lvol_store *lvs, const char *name, uint64_t sz,
 	req->cb_fn = cb_fn;
 	req->cb_arg = cb_arg;
 
-	lvol = lvol_alloc(lvs, name, thin_provision, clear_method);
+	if (uuid) {
+		if (spdk_uuid_parse(&parsed_uuid, uuid) != 0) {
+			free(req);
+			SPDK_ERRLOG("Invalid lvol uuid provided\n");
+			return -EINVAL;
+		}
+	}
+
+	lvol = lvol_alloc(lvs, name, uuid ? &parsed_uuid : NULL, thin_provision, clear_method);
 	if (!lvol) {
 		free(req);
 		SPDK_ERRLOG("Cannot alloc memory for lvol base pointer\n");
@@ -1270,7 +1308,7 @@ spdk_lvol_create_esnap_clone(const void *esnap_id, uint32_t id_len, uint64_t siz
 	req->cb_fn = cb_fn;
 	req->cb_arg = cb_arg;
 
-	lvol = lvol_alloc(lvs, clone_name, true, LVOL_CLEAR_WITH_DEFAULT);
+	lvol = lvol_alloc(lvs, clone_name, NULL, true, LVOL_CLEAR_WITH_DEFAULT);
 	if (!lvol) {
 		free(req);
 		SPDK_ERRLOG("Cannot alloc memory for lvol base pointer\n");
@@ -1333,7 +1371,7 @@ spdk_lvol_create_snapshot(struct spdk_lvol *origlvol, const char *snapshot_name,
 		return;
 	}
 
-	newlvol = lvol_alloc(origlvol->lvol_store, snapshot_name, true,
+	newlvol = lvol_alloc(origlvol->lvol_store, snapshot_name, NULL, true,
 			     (enum lvol_clear_method)origlvol->clear_method);
 	if (!newlvol) {
 		SPDK_ERRLOG("Cannot alloc memory for lvol base pointer\n");
@@ -1394,7 +1432,7 @@ spdk_lvol_create_clone(struct spdk_lvol *origlvol, const char *clone_name,
 		return;
 	}
 
-	newlvol = lvol_alloc(lvs, clone_name, true, (enum lvol_clear_method)origlvol->clear_method);
+	newlvol = lvol_alloc(lvs, clone_name, NULL, true, (enum lvol_clear_method)origlvol->clear_method);
 	if (!newlvol) {
 		SPDK_ERRLOG("Cannot alloc memory for lvol base pointer\n");
 		free(req);
