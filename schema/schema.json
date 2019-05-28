@@ -5185,6 +5185,43 @@
       ]
     },
     {
+      "name": "construct_ms_lvol_bdev",
+      "private": true,
+      "params": [
+        {
+          "name": "uuid",
+          "type": "string",
+          "description": "UUID of the logical volume to create"
+        },
+        {
+          "name": "lvs_name",
+          "type": "string",
+          "description": "Name of logical volume store to create logical volume on"
+        },
+        {
+          "name": "lvol_name",
+          "type": "string",
+          "description": "Name of logical volume to create"
+        },
+        {
+          "name": "size",
+          "type": "uint64",
+          "required": true,
+          "description": "Desired size of logical volume in bytes"
+        },
+        {
+          "name": "thin_provision",
+          "type": "boolean",
+          "description": "True to enable thin provisioning"
+        },
+        {
+          "name": "clear_method",
+          "type": "string",
+          "description": "Change default data clusters clear method. Available: none, unmap, write_zeroes"
+        }
+      ]
+    },
+    {
       "name": "bdev_lvol_snapshot",
       "params": [
         {

@@ -1445,3 +1445,78 @@ cleanup:
 
 SPDK_RPC_REGISTER("bdev_lvol_set_parent_bdev", rpc_bdev_lvol_set_parent_bdev,
 		  SPDK_RPC_RUNTIME)
+
+
+static const struct spdk_json_object_decoder rpc_construct_ms_lvol_bdev_decoders[] = {
+	{"uuid", offsetof(struct rpc_construct_ms_lvol_bdev_ctx, uuid), spdk_json_decode_string, true},
+	{"lvs_name", offsetof(struct rpc_construct_ms_lvol_bdev_ctx, lvs_name), spdk_json_decode_string, true},
+	{"lvol_name", offsetof(struct rpc_construct_ms_lvol_bdev_ctx, lvol_name), spdk_json_decode_string, true},
+	{"size", offsetof(struct rpc_construct_ms_lvol_bdev_ctx, size), spdk_json_decode_uint64},
+	{"thin_provision", offsetof(struct rpc_construct_ms_lvol_bdev_ctx, thin_provision), spdk_json_decode_bool, true},
+	{"clear_method", offsetof(struct rpc_construct_ms_lvol_bdev_ctx, clear_method), spdk_json_decode_string, true},
+};
+
+static void
+rpc_construct_ms_lvol_bdev(struct spdk_jsonrpc_request *request,
+				const struct spdk_json_val *params)
+{
+	struct rpc_construct_ms_lvol_bdev_ctx req = {};
+	enum lvol_clear_method clear_method;
+	int rc;
+	struct spdk_lvol_store *lvs = NULL;
+
+	SPDK_INFOLOG(lvol_rpc, "Creating blob\n");
+
+	if (spdk_json_decode_object(params, rpc_construct_ms_lvol_bdev_decoders,
+				    SPDK_COUNTOF(rpc_construct_ms_lvol_bdev_decoders),
+				    &req)) {
+		SPDK_INFOLOG(lvol_rpc, "spdk_json_decode_object failed\n");
+		rc = -EINVAL;
+		goto invalid;
+	}
+
+	lvs = vbdev_get_lvol_store_by_name(req.lvs_name);
+	if (!lvs) {
+		SPDK_INFOLOG(lvol_rpc, "lvol store not found\n");
+		rc = -EINVAL;
+		goto invalid;
+	}
+
+	if (req.lvol_name == NULL) {
+		SPDK_INFOLOG(lvol_rpc, "no bdev name\n");
+		rc = -EINVAL;
+		goto invalid;
+	}
+
+	if (req.clear_method != NULL) {
+		if (!strcasecmp(req.clear_method, "none")) {
+			clear_method = LVOL_CLEAR_WITH_NONE;
+		} else if (!strcasecmp(req.clear_method, "unmap")) {
+			clear_method = LVOL_CLEAR_WITH_UNMAP;
+		} else if (!strcasecmp(req.clear_method, "write_zeroes")) {
+			clear_method = LVOL_CLEAR_WITH_WRITE_ZEROES;
+		} else {
+			rc = -EINVAL;
+			goto invalid;
+		}
+	} else {
+		clear_method = LVOL_CLEAR_WITH_DEFAULT;
+	}
+
+	rc = vbdev_lvol_create_with_uuid(lvs, req.lvol_name, req.size,
+					 req.thin_provision, clear_method, req.uuid,
+					 rpc_bdev_lvol_create_cb, request);
+	if (rc < 0) {
+		goto invalid;
+	}
+
+	free_rpc_construct_ms_lvol_bdev(&req);
+	return;
+
+invalid:
+	spdk_jsonrpc_send_error_response(request, SPDK_JSONRPC_ERROR_INVALID_PARAMS,
+					 spdk_strerror(-rc));
+	free_rpc_construct_ms_lvol_bdev(&req);
+}
+
+SPDK_RPC_REGISTER("construct_ms_lvol_bdev", rpc_construct_ms_lvol_bdev, SPDK_RPC_RUNTIME)
