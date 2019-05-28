@@ -11196,6 +11196,10 @@ Example response:
 }
 ~~~
 
+### construct_ms_lvol_bdev {#rpc_construct_ms_lvol_bdevs}
+
+TODO: provide documentation for this Mayastor LVOL Api extension.
+
 ## RAID
 
 ### bdev_raid_set_options {#rpc_bdev_raid_set_options}
