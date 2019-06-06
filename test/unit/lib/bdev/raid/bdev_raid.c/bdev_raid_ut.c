@@ -86,7 +86,7 @@ DEFINE_STUB(spdk_bdev_flush_blocks, int, (struct spdk_bdev_desc *desc, struct sp
 DEFINE_STUB(spdk_conf_next_section, struct spdk_conf_section *, (struct spdk_conf_section *sp),
 	    NULL);
 DEFINE_STUB_V(spdk_rpc_register_method, (const char *method, spdk_rpc_method_handler func,
-		uint32_t state_mask));
+		void *ctx, uint32_t state_mask));
 DEFINE_STUB_V(spdk_rpc_register_alias_deprecated, (const char *method, const char *alias));
 DEFINE_STUB_V(spdk_jsonrpc_end_result, (struct spdk_jsonrpc_request *request,
 					struct spdk_json_write_ctx *w));
@@ -121,6 +121,8 @@ DEFINE_STUB(spdk_bdev_get_dif_type, enum spdk_dif_type, (const struct spdk_bdev 
 	    SPDK_DIF_DISABLE);
 DEFINE_STUB(spdk_bdev_is_dif_head_of_md, bool, (const struct spdk_bdev *bdev), false);
 DEFINE_STUB(spdk_bdev_notify_blockcnt_change, int, (struct spdk_bdev *bdev, uint64_t size), 0);
+DEFINE_STUB_V(spdk_rpc_no_ctx_wrapper, (struct spdk_jsonrpc_request *request,
+					const struct spdk_json_val *params, void *ctx));
 
 struct spdk_io_channel *
 spdk_bdev_get_io_channel(struct spdk_bdev_desc *desc)
