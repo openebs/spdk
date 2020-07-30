@@ -205,6 +205,13 @@ spdk_rpc_server_listen(const char *listen_addr)
 		goto ret;
 	}
 
+	/*
+	 * allow unprivileged rpc client to interact with the
+	 * rpc socket
+	 */
+
+	chmod(listen_addr, S_IRWXU | S_IRWXG | S_IRWXO);
+
 	return server;
 
 ret:
