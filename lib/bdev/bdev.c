@@ -128,8 +128,6 @@ _bdev_init(void)
 	spdk_spin_init(&g_bdev_mgr.spinlock);
 }
 
-typedef void (*lock_range_cb)(struct lba_range *range, void *ctx, int status);
-
 typedef void (*bdev_copy_bounce_buffer_cpl)(void *ctx, int rc);
 
 struct lba_range {
@@ -421,13 +419,7 @@ static int bdev_writev_blocks_with_md(struct spdk_bdev_desc *desc, struct spdk_i
 				      uint32_t nvme_cdw12_raw, uint32_t nvme_cdw13_raw,
 				      spdk_bdev_io_completion_cb cb, void *cb_arg);
 
-static int bdev_lock_lba_range(struct spdk_bdev_desc *desc, struct spdk_io_channel *_ch,
-			       uint64_t offset, uint64_t length,
-			       lock_range_cb cb_fn, void *cb_arg);
-
-static int bdev_unlock_lba_range(struct spdk_bdev_desc *desc, struct spdk_io_channel *_ch,
-				 uint64_t offset, uint64_t length,
-				 lock_range_cb cb_fn, void *cb_arg);
+static inline void bdev_io_complete(void *ctx);
 
 static bool bdev_abort_queued_io(bdev_io_tailq_t *queue, struct spdk_bdev_io *bio_to_abort);
 static bool bdev_abort_buf_io(struct spdk_bdev_mgmt_channel *ch, struct spdk_bdev_io *bio_to_abort);
@@ -9818,7 +9810,7 @@ _bdev_lock_lba_range(struct spdk_bdev *bdev, struct spdk_bdev_channel *ch,
 	return 0;
 }
 
-static int
+int
 bdev_lock_lba_range(struct spdk_bdev_desc *desc, struct spdk_io_channel *_ch,
 		    uint64_t offset, uint64_t length,
 		    lock_range_cb cb_fn, void *cb_arg)
@@ -9952,7 +9944,7 @@ _bdev_unlock_lba_range(struct spdk_bdev *bdev, uint64_t offset, uint64_t length,
 	return 0;
 }
 
-static int
+int
 bdev_unlock_lba_range(struct spdk_bdev_desc *desc, struct spdk_io_channel *_ch,
 		      uint64_t offset, uint64_t length,
 		      lock_range_cb cb_fn, void *cb_arg)
