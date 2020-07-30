@@ -2426,6 +2426,19 @@ union spdk_bdev_nvme_ctratt spdk_bdev_get_nvme_ctratt(struct spdk_bdev *bdev);
  * \return Namespace ID or 0 if it's not available.
  */
 uint32_t spdk_bdev_get_nvme_nsid(struct spdk_bdev *bdev);
+struct lba_range;
+
+typedef void (*lock_range_cb)(struct lba_range *range, void *ctx, int status);
+
+int
+bdev_lock_lba_range(struct spdk_bdev_desc *desc, struct spdk_io_channel *_ch,
+		    uint64_t offset, uint64_t length,
+		    lock_range_cb cb_fn, void *cb_arg);
+
+int
+bdev_unlock_lba_range(struct spdk_bdev_desc *desc, struct spdk_io_channel *_ch,
+		      uint64_t offset, uint64_t length,
+		      lock_range_cb cb_fn, void *cb_arg);
 
 #ifdef __cplusplus
 }
