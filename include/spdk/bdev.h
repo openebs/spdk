@@ -2208,6 +2208,20 @@ void spdk_bdev_for_each_channel(struct spdk_bdev *bdev, spdk_bdev_for_each_chann
  */
 union spdk_bdev_nvme_ctratt spdk_bdev_get_nvme_ctratt(struct spdk_bdev *bdev);
 
+struct lba_range;
+
+typedef void (*lock_range_cb)(struct lba_range *range, void *ctx, int status);
+
+int
+bdev_lock_lba_range(struct spdk_bdev_desc *desc, struct spdk_io_channel *_ch,
+		    uint64_t offset, uint64_t length,
+		    lock_range_cb cb_fn, void *cb_arg);
+
+int
+bdev_unlock_lba_range(struct spdk_bdev_desc *desc, struct spdk_io_channel *_ch,
+		      uint64_t offset, uint64_t length,
+		      lock_range_cb cb_fn, void *cb_arg);
+
 #ifdef __cplusplus
 }
 #endif
