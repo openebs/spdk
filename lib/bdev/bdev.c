@@ -131,8 +131,6 @@ static struct spdk_bdev_mgr g_bdev_mgr = {
 	.mutex = PTHREAD_MUTEX_INITIALIZER,
 };
 
-typedef void (*lock_range_cb)(void *ctx, int status);
-
 struct lba_range {
 	uint64_t			offset;
 	uint64_t			length;
@@ -365,16 +363,6 @@ bdev_writev_blocks_with_md(struct spdk_bdev_desc *desc, struct spdk_io_channel *
 			   uint64_t offset_blocks, uint64_t num_blocks,
 			   spdk_bdev_io_completion_cb cb, void *cb_arg,
 			   struct spdk_bdev_ext_io_opts *opts);
-
-static int
-bdev_lock_lba_range(struct spdk_bdev_desc *desc, struct spdk_io_channel *_ch,
-		    uint64_t offset, uint64_t length,
-		    lock_range_cb cb_fn, void *cb_arg);
-
-static int
-bdev_unlock_lba_range(struct spdk_bdev_desc *desc, struct spdk_io_channel *_ch,
-		      uint64_t offset, uint64_t length,
-		      lock_range_cb cb_fn, void *cb_arg);
 
 static inline void bdev_io_complete(void *ctx);
 
@@ -6956,7 +6944,7 @@ bdev_lba_range_overlaps_tailq(struct lba_range *range, lba_range_tailq_t *tailq)
 	return false;
 }
 
-static int
+int
 bdev_lock_lba_range(struct spdk_bdev_desc *desc, struct spdk_io_channel *_ch,
 		    uint64_t offset, uint64_t length,
 		    lock_range_cb cb_fn, void *cb_arg)
@@ -7082,7 +7070,7 @@ bdev_unlock_lba_range_get_channel(struct spdk_io_channel_iter *i)
 	spdk_for_each_channel_continue(i, 0);
 }
 
-static int
+int
 bdev_unlock_lba_range(struct spdk_bdev_desc *desc, struct spdk_io_channel *_ch,
 		      uint64_t offset, uint64_t length,
 		      lock_range_cb cb_fn, void *cb_arg)
