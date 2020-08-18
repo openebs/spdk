@@ -826,10 +826,6 @@ _nvme_qpair_submit_request(struct spdk_nvme_qpair *qpair, struct nvme_request *r
 
 	nvme_qpair_check_enabled(qpair);
 
-	if (nvme_qpair_get_state(qpair) == NVME_QPAIR_DISCONNECTED) {
-		return -ENXIO;
-	}
-
 	if (req->num_children) {
 		/*
 		 * This is a split (parent) request. Submit all of the children but not the parent
@@ -882,6 +878,11 @@ _nvme_qpair_submit_request(struct spdk_nvme_qpair *qpair, struct nvme_request *r
 				return 0;
 			}
 		}
+	}
+
+	if (nvme_qpair_get_state(qpair) == NVME_QPAIR_DISCONNECTED) {
+		rc = -ENXIO;
+		goto error;
 	}
 
 	if (spdk_unlikely(ctrlr->is_failed)) {
