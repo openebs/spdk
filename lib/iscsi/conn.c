@@ -139,7 +139,12 @@ int initialize_iscsi_conns(void)
 
 	SPDK_DEBUGLOG(SPDK_LOG_ISCSI, "spdk_iscsi_init\n");
 
-	snprintf(g_shm_name, sizeof(g_shm_name), "/spdk_iscsi_conns.%d", spdk_app_get_shm_id());
+	/*
+	 * Mayastor does not set values in g_spdk_app struct so we should not
+	 * call spdk_app_get_shm_id() and rather use something that is always
+	 * unique.
+	 */
+	snprintf(g_shm_name, sizeof(g_shm_name), "/spdk_iscsi_conns.%d", getpid());
 	g_conns_array_fd = shm_open(g_shm_name, O_RDWR | O_CREAT, 0600);
 	if (g_conns_array_fd < 0) {
 		SPDK_ERRLOG("could not shm_open %s\n", g_shm_name);
