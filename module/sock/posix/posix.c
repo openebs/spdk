@@ -1402,4 +1402,4 @@ static struct spdk_net_impl g_posix_net_impl = {
 	.set_opts	= posix_sock_impl_set_opts,
 };
 
-SPDK_NET_IMPL_REGISTER(posix, &g_posix_net_impl, DEFAULT_SOCK_PRIORITY);
+SPDK_NET_IMPL_REGISTER(posix, &g_posix_net_impl, DEFAULT_SOCK_PRIORITY + 3);
