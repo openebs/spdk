@@ -13,7 +13,7 @@ struct aio_flush_ctx {
 	struct file_disk	*fdisk;
 };
 
-struct aio_unmap_ctx {
+struct aio_range_ctx {
 	struct file_disk	*fdisk;
 	uint64_t		offset_blocks;
 	uint64_t		num_blocks;

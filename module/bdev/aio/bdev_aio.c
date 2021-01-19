@@ -68,14 +68,15 @@ struct bdev_aio_group_channel {
 	TAILQ_HEAD(, bdev_aio_io_channel)	io_ch_head;
 };
 
-typedef int (*aio_unmap_fn)(int fd, uint64_t range[]);
+typedef int (*aio_range_fn)(int fd, uint64_t range[]);
 
 struct file_disk {
 	struct bdev_aio_task	*reset_task;
 	struct spdk_poller	*reset_retry_timer;
 	struct spdk_bdev	disk;
 	char			*filename;
-	aio_unmap_fn		unmap;
+	aio_range_fn		unmap;
+	aio_range_fn		zero;
 	int			fd;
 	TAILQ_ENTRY(file_disk)  link;
 	bool			block_size_override;
@@ -146,34 +147,34 @@ bdev_aio_open(struct file_disk *disk)
 
 /* zero region of a (sparse) file by creating a hole */
 static int
-aio_unmap_fallocate_sparse(int fd, uint64_t range[])
+aio_range_fallocate_sparse(int fd, uint64_t range[])
 {
 	return fallocate(fd, (FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE), range[0], range[1]);
 }
 
 /* zero region of a file by writing zeros */
 static int
-aio_unmap_fallocate_zero(int fd, uint64_t range[])
+aio_range_fallocate_zero(int fd, uint64_t range[])
 {
 	return fallocate(fd, (FALLOC_FL_ZERO_RANGE | FALLOC_FL_KEEP_SIZE), range[0], range[1]);
 }
 
 /* unmap region of a device */
 static int
-aio_unmap_discard(int fd, uint64_t range[])
+aio_range_unmap_discard(int fd, uint64_t range[])
 {
 	return ioctl(fd, BLKDISCARD, range);
 }
 
 /* zero region of a device */
 static int
-aio_unmap_zero(int fd, uint64_t range[])
+aio_range_unmap_zero(int fd, uint64_t range[])
 {
 	return ioctl(fd, BLKZEROOUT, range);
 }
 
 static int
-get_aio_unmap_fn(struct file_disk *disk)
+set_aio_range_functions(struct file_disk *disk)
 {
 	struct stat st;
 	int rc;
@@ -183,6 +184,7 @@ get_aio_unmap_fn(struct file_disk *disk)
 		SPDK_ERRLOG("fstat(%s) failed, errno %d: %s\n",
 			    disk->filename, rc, spdk_strerror(rc));
 		disk->unmap = NULL;
+		disk->zero = NULL;
 		return ERROR(rc);
 	}
 
@@ -194,33 +196,40 @@ get_aio_unmap_fn(struct file_disk *disk)
 			SPDK_ERRLOG("ioctl(%s, BLKDISCARDZEROES) failed, errno %d: %s\n",
 				    disk->filename, rc, spdk_strerror(rc));
 			disk->unmap = NULL;
+			disk->zero = NULL;
 			return ERROR(rc);
 		}
 
 		if (discard) {
 			/* rely on fact that device guarantees that discarded blocks will be read back as zeros */
-			SPDK_NOTICELOG("device=%s unmap=discard\n", disk->filename);
-			disk->unmap = aio_unmap_discard;
+			SPDK_NOTICELOG("device=%s unmap=discard zero=discard\n", disk->filename);
+			disk->unmap = aio_range_unmap_discard;
+			disk->zero = aio_range_unmap_discard;
 			return 0;
 		}
 
 		/* get kernel to zero blocks on our behalf */
-		SPDK_NOTICELOG("device=%s unmap=zero\n", disk->filename);
-		disk->unmap = aio_unmap_zero;
+		SPDK_NOTICELOG("device=%s unmap=none zero=zero\n", disk->filename);
+		disk->unmap = NULL;
+		disk->zero = aio_range_unmap_zero;
 		return 0;
 	}
+
+	/* simulate unmap by creating a hole in (sparse) file */
+	disk->unmap = aio_range_fallocate_sparse;
 
 	/* FIXME: this should be configurable */
+
 	if (true) {
 		/* zero blocks by creating a hole in (sparse) file */
-		SPDK_NOTICELOG("file=%s unmap=sparse\n", disk->filename);
-		disk->unmap = aio_unmap_fallocate_sparse;
+		SPDK_NOTICELOG("file=%s unmap=sparse zero=sparse\n", disk->filename);
+		disk->zero = aio_range_fallocate_sparse;
 		return 0;
 	}
 
-	/* write zeros */
-	SPDK_NOTICELOG("file=%s unmap=zero\n", disk->filename);
-	disk->unmap = aio_unmap_fallocate_zero;
+	/* zero blocks by writing zeros */
+	SPDK_NOTICELOG("file=%s unmap=sparse zero=zero\n", disk->filename);
+	disk->zero = aio_range_fallocate_zero;
 	return 0;
 }
 
@@ -325,6 +334,33 @@ create_aio_request_ctx(struct spdk_bdev_io *bdev_io, aio_request_fn fn, size_t c
 	return request;
 }
 
+static void
+aio_send_range_request(struct spdk_bdev_io *bdev_io, struct file_disk *fdisk, aio_request_fn fn)
+{
+	struct aio_request_ctx *request;
+	struct aio_range_ctx *ctx;
+
+	request = create_aio_request_ctx(bdev_io, fn, sizeof(struct aio_range_ctx));
+
+	if (request == NULL) {
+		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_NOMEM);
+		return;
+	}
+
+	ctx = (struct aio_range_ctx *)request->ctx;
+
+	ctx->fdisk = fdisk;
+
+	ctx->offset_blocks = bdev_io->u.bdev.offset_blocks;
+	ctx->num_blocks = bdev_io->u.bdev.num_blocks;
+	ctx->blocklen = bdev_io->bdev->blocklen;
+
+	if (aio_send_request(request) < 0) {
+		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_NOMEM);
+		free(request);
+	}
+}
+
 static int
 aio_flush_request_fn(void *arg)
 {
@@ -361,13 +397,14 @@ bdev_aio_flush(struct spdk_bdev_io *bdev_io)
 static int
 aio_unmap_request_fn(void *arg)
 {
-	struct aio_unmap_ctx *ctx = arg;
+	struct aio_range_ctx *ctx = arg;
 	uint64_t range[2];
 
 	range[0] = ctx->offset_blocks * ctx->blocklen;
 	range[1] = ctx->num_blocks * ctx->blocklen;
 
-	SPDK_NOTICELOG("[unmap] file=%s range=%lu,%lu\n", ctx->fdisk->filename, range[0], range[1]);
+	SPDK_NOTICELOG("[unmap] file=%s range=%" PRIu64 ",%" PRIu64 "\n",
+		       ctx->fdisk->filename, range[0], range[1]);
 
 	return ctx->fdisk->unmap(ctx->fdisk->fd, range);
 }
@@ -376,8 +413,6 @@ static void
 bdev_aio_unmap(struct spdk_bdev_io *bdev_io)
 {
 	struct file_disk *fdisk = bdev_io->bdev->ctxt;
-	struct aio_request_ctx *request;
-	struct aio_unmap_ctx *ctx;
 
 	if (fdisk->unmap == NULL) {
 		/* We should NEVER be called in this situation as bdev_aio_io_type_supported() should return false */
@@ -385,25 +420,36 @@ bdev_aio_unmap(struct spdk_bdev_io *bdev_io)
 		return;
 	}
 
-	request = create_aio_request_ctx(bdev_io, aio_unmap_request_fn, sizeof(struct aio_unmap_ctx));
+	aio_send_range_request(bdev_io, fdisk, aio_unmap_request_fn);
+}
 
-	if (request == NULL) {
-		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_NOMEM);
+static int
+aio_zero_request_fn(void *arg)
+{
+	struct aio_range_ctx *ctx = arg;
+	uint64_t range[2];
+
+	range[0] = ctx->offset_blocks * ctx->blocklen;
+	range[1] = ctx->num_blocks * ctx->blocklen;
+
+	SPDK_NOTICELOG("[zero] file=%s range=%" PRIu64 ",%" PRIu64 "\n",
+		       ctx->fdisk->filename, range[0], range[1]);
+
+	return ctx->fdisk->zero(ctx->fdisk->fd, range);
+}
+
+static void
+bdev_aio_zero(struct spdk_bdev_io *bdev_io)
+{
+	struct file_disk *fdisk = bdev_io->bdev->ctxt;
+
+	if (fdisk->zero == NULL) {
+		/* We should NEVER be called in this situation as bdev_aio_io_type_supported() should return false */
+		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_FAILED);
 		return;
 	}
 
-	ctx = (struct aio_unmap_ctx *)request->ctx;
-
-	ctx->fdisk = fdisk;
-
-	ctx->offset_blocks = bdev_io->u.bdev.offset_blocks;
-	ctx->num_blocks = bdev_io->u.bdev.num_blocks;
-	ctx->blocklen = bdev_io->bdev->blocklen;
-
-	if (aio_send_request(request) < 0) {
-		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_NOMEM);
-		free(request);
-	}
+	aio_send_range_request(bdev_io, fdisk, aio_zero_request_fn);
 }
 
 static int
@@ -645,7 +691,8 @@ bdev_aio_get_buf_cb(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_io,
 	}
 }
 
-static int _bdev_aio_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_io)
+static void
+bdev_aio_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_io)
 {
 	switch (bdev_io->type) {
 	/* Read and write operations must be performed on buffers aligned to
@@ -655,30 +702,26 @@ static int _bdev_aio_submit_request(struct spdk_io_channel *ch, struct spdk_bdev
 	case SPDK_BDEV_IO_TYPE_WRITE:
 		spdk_bdev_io_get_buf(bdev_io, bdev_aio_get_buf_cb,
 				     bdev_io->u.bdev.num_blocks * bdev_io->bdev->blocklen);
-		return 0;
+		break;
 
 	case SPDK_BDEV_IO_TYPE_FLUSH:
 		bdev_aio_flush(bdev_io);
-		return 0;
+		break;
 
 	case SPDK_BDEV_IO_TYPE_RESET:
 		bdev_aio_reset((struct file_disk *)bdev_io->bdev->ctxt,
 			       (struct bdev_aio_task *)bdev_io->driver_ctx);
-		return 0;
+		break;
 
 	case SPDK_BDEV_IO_TYPE_WRITE_ZEROES:
+		bdev_aio_zero(bdev_io);
+		break;
+
 	case SPDK_BDEV_IO_TYPE_UNMAP:
 		bdev_aio_unmap(bdev_io);
-		return 0;
+		break;
 
 	default:
-		return -1;
-	}
-}
-
-static void bdev_aio_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_io)
-{
-	if (_bdev_aio_submit_request(ch, bdev_io) < 0) {
 		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_FAILED);
 	}
 }
@@ -694,6 +737,8 @@ bdev_aio_io_type_supported(void *ctx, enum spdk_bdev_io_type io_type)
 		return true;
 
 	case SPDK_BDEV_IO_TYPE_WRITE_ZEROES:
+		return (((struct file_disk *)ctx)->zero != NULL);
+
 	case SPDK_BDEV_IO_TYPE_UNMAP:
 		return (((struct file_disk *)ctx)->unmap != NULL);
 
@@ -880,7 +925,7 @@ create_aio_bdev(const char *name, const char *filename, uint32_t block_size)
 		goto error_return;
 	}
 
-	rc = get_aio_unmap_fn(fdisk);
+	rc = set_aio_range_functions(fdisk);
 	if (rc < 0) {
 		goto error_return;
 	}
