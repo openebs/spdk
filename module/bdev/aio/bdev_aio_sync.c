@@ -1,7 +1,9 @@
 #include "bdev_aio.h"
 #include "spdk/env.h"
+#include "spdk/stdinc.h"
 #include "spdk/thread.h"
 #include "spdk/bdev_module.h"
+#include "spdk/log.h"
 
 #include <libaio.h>
 
@@ -117,6 +119,8 @@ aio_blocking_worker(void *arg)
 	size_t count;
 	size_t i;
 
+	SPDK_NOTICELOG("aio_blocking_worker started on core:%d\n", sched_getcpu());
+
 	pthread_mutex_lock(&g_mutex);
 
 	for (;;) {
@@ -162,9 +166,34 @@ aio_send_request(void *message)
 	return status;
 }
 
+static
+void _set_affinity(pthread_attr_t *attr)
+{
+	cpu_set_t cpuset;
+	unsigned i, cores;
+
+	CPU_ZERO(&cpuset);
+
+	cores = sysconf(_SC_NPROCESSORS_CONF);
+
+	for (i = 0; i < cores; i++) {
+		CPU_SET(i, &cpuset);
+	}
+
+	SPDK_ENV_FOREACH_CORE(i) {
+		CPU_CLR(i, &cpuset);
+	}
+
+	if (CPU_COUNT(&cpuset) > 0) {
+		pthread_attr_setaffinity_np(attr, sizeof(cpu_set_t), &cpuset);
+	}
+}
+
 void
 aio_sync_init(void)
 {
+	pthread_attr_t attr;
+
 	_init_queue();
 
 	g_exit = false;
@@ -173,7 +202,13 @@ aio_sync_init(void)
 
 	pthread_cond_init(&g_cond, NULL);
 
-	pthread_create(&g_blocking_worker_thread, NULL, aio_blocking_worker, NULL);
+	pthread_attr_init(&attr);
+
+	_set_affinity(&attr);
+
+	pthread_create(&g_blocking_worker_thread, &attr, aio_blocking_worker, NULL);
+
+	pthread_attr_destroy(&attr);
 }
 
 void
