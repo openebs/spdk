@@ -8023,7 +8023,10 @@ bdev_open(struct spdk_bdev *bdev, bool write, struct spdk_bdev_desc *desc)
 		return -ENODEV;
 	}
 
-	if (write && bdev->internal.claim_type != SPDK_BDEV_CLAIM_NONE) {
+	if (write &&
+	    bdev->internal.claim_type == SPDK_BDEV_CLAIM_EXCL_WRITE &&
+	    bdev->internal.claim.v1.module &&
+	    strcmp(bdev->internal.claim.v1.module->name, "NVMe-oF Target")) {
 		LOG_ALREADY_CLAIMED_ERROR("already claimed", bdev);
 		spdk_spin_unlock(&bdev->internal.spinlock);
 		return -EPERM;
