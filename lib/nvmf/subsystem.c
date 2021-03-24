@@ -51,6 +51,10 @@
 #define MODEL_NUMBER_DEFAULT "SPDK bdev Controller"
 #define NVMF_SUBSYSTEM_DEFAULT_NAMESPACES 32
 
+/* The spec reserves cntlid values in the range FFF0h to FFFFh. */
+#define NVMF_CNTLID_MIN 1
+#define NVMF_CNTLID_MAX 0xFFEF
+
 /*
  * States for parsing valid domains in NQNs according to RFC 1034
  */
@@ -284,6 +288,8 @@ spdk_nvmf_subsystem_create(struct spdk_nvmf_tgt *tgt,
 	subsystem->subtype = type;
 	subsystem->max_nsid = num_ns;
 	subsystem->next_cntlid = 0;
+	subsystem->cntlid_min = NVMF_CNTLID_MIN;
+	subsystem->cntlid_max = NVMF_CNTLID_MAX;
 	snprintf(subsystem->subnqn, sizeof(subsystem->subnqn), "%s", nqn);
 	pthread_mutex_init(&subsystem->mutex, NULL);
 	TAILQ_INIT(&subsystem->listeners);
@@ -1636,6 +1642,31 @@ spdk_nvmf_subsystem_get_max_nsid(struct spdk_nvmf_subsystem *subsystem)
 	return subsystem->max_nsid;
 }
 
+int
+nvmf_subsystem_set_cntlid_range(struct spdk_nvmf_subsystem *subsystem,
+				uint16_t cntlid_min, uint16_t cntlid_max)
+{
+	if (subsystem->state != SPDK_NVMF_SUBSYSTEM_INACTIVE) {
+		return -EAGAIN;
+	}
+
+	if (cntlid_min > cntlid_max) {
+		return -EINVAL;
+	}
+	/* The spec reserves cntlid values in the range FFF0h to FFFFh. */
+	if (cntlid_min < NVMF_CNTLID_MIN || cntlid_min > NVMF_CNTLID_MAX ||
+	    cntlid_max < NVMF_CNTLID_MIN || cntlid_max > NVMF_CNTLID_MAX) {
+		return -EINVAL;
+	}
+	subsystem->cntlid_min = cntlid_min;
+	subsystem->cntlid_max = cntlid_max;
+	if (subsystem->next_cntlid < cntlid_min || subsystem->next_cntlid > cntlid_max - 1) {
+		subsystem->next_cntlid = cntlid_min - 1;
+	}
+
+	return 0;
+}
+
 static uint16_t
 nvmf_subsystem_gen_cntlid(struct spdk_nvmf_subsystem *subsystem)
 {
@@ -1645,11 +1676,10 @@ nvmf_subsystem_gen_cntlid(struct spdk_nvmf_subsystem *subsystem)
 	 * In the worst case, we might have to try all CNTLID values between 1 and 0xFFF0 - 1
 	 * before we find one that is unused (or find that all values are in use).
 	 */
-	for (count = 0; count < 0xFFF0 - 1; count++) {
+	for (count = 0; count < subsystem->cntlid_max - subsystem->cntlid_min + 1; count++) {
 		subsystem->next_cntlid++;
-		if (subsystem->next_cntlid >= 0xFFF0) {
-			/* The spec reserves cntlid values in the range FFF0h to FFFFh. */
-			subsystem->next_cntlid = 1;
+		if (subsystem->next_cntlid > subsystem->cntlid_max) {
+			subsystem->next_cntlid = subsystem->cntlid_min;
 		}
 
 		/* Check if a controller with this cntlid currently exists. */

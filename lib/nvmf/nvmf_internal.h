@@ -286,6 +286,9 @@ struct spdk_nvmf_subsystem {
 	struct spdk_nvmf_ns				**ns;
 	uint32_t					max_nsid;
 
+	uint16_t					cntlid_min;
+	uint16_t					cntlid_max;
+
 	TAILQ_HEAD(, spdk_nvmf_ctrlr)			ctrlrs;
 
 	/* A mutex used to protect the hosts list and allow_any_host flag. Unlike the namespace
@@ -371,6 +374,21 @@ void nvmf_subsystem_set_ana_state(struct spdk_nvmf_subsystem *subsystem,
 				  const struct spdk_nvme_transport_id *trid,
 				  enum spdk_nvme_ana_state ana_state,
 				  spdk_nvmf_tgt_subsystem_listen_done_fn cb_fn, void *cb_arg);
+
+/**
+ * Sets the controller ID range for a subsystem.
+ * Valid range is [1, 0xFFEF].
+ *
+ * May only be performed on subsystems in the INACTIVE state.
+ *
+ * \param subsystem Subsystem to modify.
+ * \param cntlid_min Minimum controller ID.
+ * \param cntlid_max Maximum controller ID.
+ *
+ * \return 0 on success, or negated errno value on failure.
+ */
+int nvmf_subsystem_set_cntlid_range(struct spdk_nvmf_subsystem *subsystem,
+				    uint16_t cntlid_min, uint16_t cntlid_max);
 
 int nvmf_ctrlr_async_event_ns_notice(struct spdk_nvmf_ctrlr *ctrlr);
 int nvmf_ctrlr_async_event_ana_change_notice(struct spdk_nvmf_ctrlr *ctrlr);
