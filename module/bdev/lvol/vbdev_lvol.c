@@ -1379,3 +1379,74 @@ vbdev_lvol_create_with_uuid(struct spdk_lvol_store *lvs, const char *name, uint6
 
 	return rc;
 }
+
+int
+vbdev_lvs_create_with_uuid(const char *base_bdev_name, const char *name, const char *uuid,
+			   uint32_t cluster_sz,
+			   enum lvs_clear_method clear_method, spdk_lvs_op_with_handle_complete cb_fn, void *cb_arg)
+{
+	struct spdk_bs_dev *bs_dev;
+	struct spdk_lvs_with_handle_req *lvs_req;
+	struct spdk_lvs_opts opts;
+	int rc;
+	int len;
+
+	if (base_bdev_name == NULL) {
+		SPDK_ERRLOG("missing base_bdev_name param\n");
+		return -EINVAL;
+	}
+
+	spdk_lvs_opts_init(&opts);
+	if (cluster_sz != 0) {
+		opts.cluster_sz = cluster_sz;
+	}
+
+	if (clear_method != 0) {
+		opts.clear_method = clear_method;
+	}
+
+	if (uuid != NULL) {
+		opts.uuid = uuid;
+	}
+
+	if (name == NULL) {
+		SPDK_ERRLOG("missing name param\n");
+		return -EINVAL;
+	}
+
+	len = strnlen(name, SPDK_LVS_NAME_MAX);
+
+	if (len == 0 || len == SPDK_LVS_NAME_MAX) {
+		SPDK_ERRLOG("name must be between 1 and %d characters\n", SPDK_LVS_NAME_MAX - 1);
+		return -EINVAL;
+	}
+	snprintf(opts.name, sizeof(opts.name), "%s", name);
+
+	lvs_req = calloc(1, sizeof(*lvs_req));
+	if (!lvs_req) {
+		SPDK_ERRLOG("Cannot alloc memory for vbdev lvol store request pointer\n");
+		return -ENOMEM;
+	}
+
+	rc = spdk_bdev_create_bs_dev_ext(base_bdev_name, vbdev_lvs_base_bdev_event_cb,
+					 NULL, &bs_dev);
+	if (rc < 0) {
+		SPDK_ERRLOG("Cannot create blobstore device\n");
+		free(lvs_req);
+		return rc;
+	}
+
+	lvs_req->bs_dev = bs_dev;
+	lvs_req->base_bdev = bs_dev->get_base_bdev(bs_dev);
+	lvs_req->cb_fn = cb_fn;
+	lvs_req->cb_arg = cb_arg;
+
+	rc = spdk_lvs_init(bs_dev, &opts, _vbdev_lvs_create_cb, lvs_req);
+	if (rc < 0) {
+		free(lvs_req);
+		bs_dev->destroy(bs_dev);
+		return rc;
+	}
+
+	return 0;
+}
