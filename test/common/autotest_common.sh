@@ -666,7 +666,7 @@ function process_core() {
 		cat <<- BT
 			##### CORE BT ${core##*/} #####
 
-			$(<"$core")
+			$(< "$core")
 
 			--
 		BT
@@ -1390,7 +1390,7 @@ function pap() {
 	while read -r file; do
 		cat <<- FILE
 			--- $file ---
-			$(<"$file")
+			$(< "$file")
 			--- $file ---
 		FILE
 		rm -f "$file"
