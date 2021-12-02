@@ -252,6 +252,10 @@ vbdev_lvs_create_with_uuid(const char *base_bdev_name, const char *name, const c
 		opts.num_md_pages_per_cluster_ratio = num_md_pages_per_cluster_ratio;
 	}
 
+	if (uuid != NULL) {
+		opts.uuid = uuid;
+	}
+
 	if (name == NULL) {
 		SPDK_ERRLOG("missing name param\n");
 		return -EINVAL;

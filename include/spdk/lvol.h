@@ -72,8 +72,12 @@ struct spdk_lvs_opts {
 
 	/** Metadata page size */
 	uint32_t                md_page_size;
-} __attribute__((packed));
 
+	/**
+	 * Optional LVS UUID.
+	 */
+	const char		*uuid;
+} __attribute__((packed));
 SPDK_STATIC_ASSERT(sizeof(struct spdk_lvs_opts) == 100, "Incorrect size");
 
 /**
