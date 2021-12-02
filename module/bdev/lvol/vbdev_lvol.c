@@ -214,6 +214,20 @@ vbdev_lvs_create_ext(const char *base_bdev_name, const char *name, uint32_t clus
 		     enum lvs_clear_method clear_method, uint32_t num_md_pages_per_cluster_ratio,
 		     uint32_t md_page_size, spdk_lvs_op_with_handle_complete cb_fn, void *cb_arg)
 {
+	/* set uuid as NULL */
+	return vbdev_lvs_create_with_uuid(base_bdev_name, name, NULL, cluster_sz,
+					  clear_method, num_md_pages_per_cluster_ratio,
+					  md_page_size, cb_fn, cb_arg);
+}
+
+int
+vbdev_lvs_create_with_uuid(const char *base_bdev_name, const char *name, const char *uuid,
+			   uint32_t cluster_sz,
+			   enum lvs_clear_method clear_method,
+			   uint32_t num_md_pages_per_cluster_ratio,
+			   uint32_t md_page_size,
+			   spdk_lvs_op_with_handle_complete cb_fn, void *cb_arg)
+{
 	struct spdk_bs_dev *bs_dev;
 	struct spdk_lvs_with_handle_req *lvs_req;
 	struct spdk_lvs_opts opts;
@@ -236,6 +250,10 @@ vbdev_lvs_create_ext(const char *base_bdev_name, const char *name, uint32_t clus
 
 	if (num_md_pages_per_cluster_ratio != 0) {
 		opts.num_md_pages_per_cluster_ratio = num_md_pages_per_cluster_ratio;
+	}
+
+	if (uuid != NULL) {
+		opts.uuid = uuid;
 	}
 
 	if (name == NULL) {
