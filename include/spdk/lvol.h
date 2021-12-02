@@ -47,6 +47,7 @@ struct spdk_lvs_opts {
 	char			name[SPDK_LVS_NAME_MAX];
 	/** num_md_pages_per_cluster_ratio = 100 means 1 page per cluster */
 	uint32_t		num_md_pages_per_cluster_ratio;
+	const char		*uuid;
 };
 
 /**
