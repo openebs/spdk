@@ -627,6 +627,7 @@ spdk_lvs_opts_init(struct spdk_lvs_opts *o)
 	o->cluster_sz = SPDK_LVS_OPTS_CLUSTER_SZ;
 	o->clear_method = LVS_CLEAR_WITH_UNMAP;
 	o->num_md_pages_per_cluster_ratio = 100;
+	o->uuid = NULL;
 	o->opts_size = sizeof(*o);
 }
 
@@ -653,12 +654,13 @@ lvs_opts_copy(const struct spdk_lvs_opts *src, struct spdk_lvs_opts *dst)
 	SET_FIELD(num_md_pages_per_cluster_ratio);
 	SET_FIELD(opts_size);
 	SET_FIELD(esnap_bs_dev_create);
+	SET_FIELD(uuid);
 
 	dst->opts_size = src->opts_size;
 
 	/* You should not remove this statement, but need to update the assert statement
 	 * if you add a new field, and also add a corresponding SET_FIELD statement */
-	SPDK_STATIC_ASSERT(sizeof(struct spdk_lvs_opts) == 88, "Incorrect size");
+	SPDK_STATIC_ASSERT(sizeof(struct spdk_lvs_opts) == 96, "Incorrect size");
 
 #undef FIELD_OK
 #undef SET_FIELD
@@ -734,8 +736,15 @@ spdk_lvs_init(struct spdk_bs_dev *bs_dev, struct spdk_lvs_opts *o,
 		return -EINVAL;
 	}
 
-	spdk_uuid_generate(&lvs->uuid);
-	snprintf(lvs->name, sizeof(lvs->name), "%s", lvs_opts.name);
+	if (!o->uuid) {
+		spdk_uuid_generate(&lvs->uuid);
+	} else if (spdk_uuid_parse(&lvs->uuid, o->uuid) != 0) {
+		lvs_free(lvs);
+		SPDK_ERRLOG("Invalid lvs uuid provided\n");
+		return -EINVAL;
+	}
+
+	snprintf(lvs->name, sizeof(lvs->name), "%s", o->name);
 
 	rc = add_lvs_to_list(lvs);
 	if (rc) {
