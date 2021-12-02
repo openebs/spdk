@@ -69,8 +69,13 @@ struct spdk_lvs_opts {
 	 * is being loaded, the lvolstore will not support external snapshots.
 	 */
 	spdk_bs_esnap_dev_create esnap_bs_dev_create;
+
+	/**
+	 * Optional LVS UUID.
+	 */
+	const char		*uuid;
 } __attribute__((packed));
-SPDK_STATIC_ASSERT(sizeof(struct spdk_lvs_opts) == 88, "Incorrect size");
+SPDK_STATIC_ASSERT(sizeof(struct spdk_lvs_opts) == 96, "Incorrect size");
 
 /**
  * Initialize an spdk_lvs_opts structure to the defaults.
