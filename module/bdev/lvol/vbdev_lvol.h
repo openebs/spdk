@@ -43,7 +43,7 @@ int vbdev_lvs_create_with_uuid(const char *base_bdev_name, const char *name, con
 			       spdk_lvs_op_with_handle_complete cb_fn, void *cb_arg);
 
 int vbdev_lvs_import(struct spdk_bdev *bdev,
-		     spdk_lvs_op_with_handle_complete cb_fn, void *cb_arg);
+			       spdk_lvs_op_with_handle_complete cb_fn, void *cb_arg);
 
 void vbdev_lvs_destruct(struct spdk_lvol_store *lvs, spdk_lvs_op_complete cb_fn, void *cb_arg);
 void vbdev_lvs_unload(struct spdk_lvol_store *lvs, spdk_lvs_op_complete cb_fn, void *cb_arg);
