@@ -93,7 +93,12 @@ DPDK_LIBS += cryptodev mbuf cmdline meter hash vhost
 # raid5 deps
 DPDK_LIBS += hash rcu
 
+# Nix build only support generic machine now for aarch64
+ifeq ($(TARGET_MACHINE),aarch64)
+DPDK_OPTS += -Dmachine=generic
+else
 DPDK_OPTS += -Dmachine=$(TARGET_ARCHITECTURE)
+endif
 
 ifneq ($(CONFIG_CROSS_PREFIX),)
 ifeq ($(findstring mingw,$(CONFIG_CROSS_PREFIX)),mingw)
