@@ -118,7 +118,13 @@ struct nvme_ctrlr {
 
 	struct nvme_ctrlr_opts			opts;
 
-	RB_HEAD(nvme_ns_tree, nvme_ns)		namespaces;
+	/**
+	 * PI check flags. This flags is set to NVMe controllers created only
+	 * through bdev_nvme_attach_controller RPC or .INI config file. Hot added
+	 * NVMe controllers are not included.
+	 */
+	uint32_t				prchk_flags;
+	RB_HEAD(bdev_nvme_ns_tree, nvme_ns)	namespaces;
 
 	struct spdk_opal_dev			*opal_dev;
 
