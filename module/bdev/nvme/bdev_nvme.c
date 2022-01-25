@@ -203,7 +203,7 @@ nvme_ns_cmp(struct nvme_ns *ns1, struct nvme_ns *ns2)
 	return ns1->id < ns2->id ? -1 : ns1->id > ns2->id;
 }
 
-RB_GENERATE_STATIC(nvme_ns_tree, nvme_ns, node, nvme_ns_cmp);
+RB_GENERATE_STATIC(bdev_nvme_ns_tree, nvme_ns, node, nvme_ns_cmp);
 
 struct spdk_nvme_qpair *
 bdev_nvme_get_io_qpair(struct spdk_io_channel *ctrlr_io_ch)
@@ -308,13 +308,13 @@ nvme_ctrlr_get_ns(struct nvme_ctrlr *nvme_ctrlr, uint32_t nsid)
 	assert(nsid > 0);
 
 	ns.id = nsid;
-	return RB_FIND(nvme_ns_tree, &nvme_ctrlr->namespaces, &ns);
+	return RB_FIND(bdev_nvme_ns_tree, &nvme_ctrlr->namespaces, &ns);
 }
 
 struct nvme_ns *
 nvme_ctrlr_get_first_active_ns(struct nvme_ctrlr *nvme_ctrlr)
 {
-	return RB_MIN(nvme_ns_tree, &nvme_ctrlr->namespaces);
+	return RB_MIN(bdev_nvme_ns_tree, &nvme_ctrlr->namespaces);
 }
 
 struct nvme_ns *
@@ -324,7 +324,7 @@ nvme_ctrlr_get_next_active_ns(struct nvme_ctrlr *nvme_ctrlr, struct nvme_ns *ns)
 		return NULL;
 	}
 
-	return RB_NEXT(nvme_ns_tree, &nvme_ctrlr->namespaces, ns);
+	return RB_NEXT(bdev_nvme_ns_tree, &nvme_ctrlr->namespaces, ns);
 }
 
 static struct nvme_ctrlr *
@@ -447,8 +447,8 @@ _nvme_ctrlr_delete(struct nvme_ctrlr *nvme_ctrlr)
 		nvme_bdev_ctrlr_delete(nvme_ctrlr->nbdev_ctrlr, nvme_ctrlr);
 	}
 
-	RB_FOREACH_SAFE(ns, nvme_ns_tree, &nvme_ctrlr->namespaces, tmp_ns) {
-		RB_REMOVE(nvme_ns_tree, &nvme_ctrlr->namespaces, ns);
+	RB_FOREACH_SAFE(ns, bdev_nvme_ns_tree, &nvme_ctrlr->namespaces, tmp_ns) {
+		RB_REMOVE(bdev_nvme_ns_tree, &nvme_ctrlr->namespaces, ns);
 		nvme_ns_free(ns);
 	}
 
@@ -4348,7 +4348,7 @@ nvme_ctrlr_populate_namespace_done(struct nvme_ns *nvme_ns, int rc)
 		nvme_ctrlr->ref++;
 		pthread_mutex_unlock(&nvme_ctrlr->mutex);
 	} else {
-		RB_REMOVE(nvme_ns_tree, &nvme_ctrlr->namespaces, nvme_ns);
+		RB_REMOVE(bdev_nvme_ns_tree, &nvme_ctrlr->namespaces, nvme_ns);
 		nvme_ns_free(nvme_ns);
 	}
 
@@ -4498,7 +4498,7 @@ nvme_ctrlr_depopulate_namespace_done(struct nvme_ns *nvme_ns)
 
 	pthread_mutex_lock(&nvme_ctrlr->mutex);
 
-	RB_REMOVE(nvme_ns_tree, &nvme_ctrlr->namespaces, nvme_ns);
+	RB_REMOVE(bdev_nvme_ns_tree, &nvme_ctrlr->namespaces, nvme_ns);
 
 	if (nvme_ns->bdev != NULL) {
 		pthread_mutex_unlock(&nvme_ctrlr->mutex);
@@ -4635,7 +4635,7 @@ nvme_ctrlr_populate_namespaces(struct nvme_ctrlr *nvme_ctrlr,
 			}
 			nvme_ns->probe_ctx = ctx;
 
-			RB_INSERT(nvme_ns_tree, &nvme_ctrlr->namespaces, nvme_ns);
+			RB_INSERT(bdev_nvme_ns_tree, &nvme_ctrlr->namespaces, nvme_ns);
 
 			nvme_ctrlr_populate_namespace(nvme_ctrlr, nvme_ns);
 		}
@@ -4662,7 +4662,7 @@ nvme_ctrlr_depopulate_namespaces(struct nvme_ctrlr *nvme_ctrlr)
 {
 	struct nvme_ns *nvme_ns, *tmp;
 
-	RB_FOREACH_SAFE(nvme_ns, nvme_ns_tree, &nvme_ctrlr->namespaces, tmp) {
+	RB_FOREACH_SAFE(nvme_ns, bdev_nvme_ns_tree, &nvme_ctrlr->namespaces, tmp) {
 		nvme_ctrlr_depopulate_namespace(nvme_ctrlr, nvme_ns);
 	}
 }
