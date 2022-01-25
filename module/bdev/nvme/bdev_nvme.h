@@ -120,7 +120,7 @@ struct nvme_ctrlr {
 	 * NVMe controllers are not included.
 	 */
 	uint32_t				prchk_flags;
-	RB_HEAD(nvme_ns_tree, nvme_ns)		namespaces;
+	RB_HEAD(bdev_nvme_ns_tree, nvme_ns)	namespaces;
 
 	struct spdk_opal_dev			*opal_dev;
 
