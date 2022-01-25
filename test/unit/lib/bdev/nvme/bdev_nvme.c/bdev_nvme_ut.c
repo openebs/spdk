@@ -4801,7 +4801,7 @@ test_retry_io_if_ana_state_is_updating(void)
 	nbdev = nvme_bdev_ctrlr_get_bdev(nbdev_ctrlr, 1);
 	CU_ASSERT(nbdev != NULL);
 
-	nvme_ns = RB_MIN(nvme_ns_tree, &nvme_ctrlr->namespaces);
+	nvme_ns = RB_MIN(bdev_nvme_ns_tree, &nvme_ctrlr->namespaces);
 	CU_ASSERT(nvme_ns != NULL);
 
 	bdev_io1 = ut_alloc_bdev_io(SPDK_BDEV_IO_TYPE_WRITE, nbdev, NULL);
@@ -4930,7 +4930,7 @@ test_retry_io_for_io_path_error(void)
 	nbdev = nvme_bdev_ctrlr_get_bdev(nbdev_ctrlr, 1);
 	CU_ASSERT(nbdev != NULL);
 
-	nvme_ns1 = RB_MIN(nvme_ns_tree, &nvme_ctrlr1->namespaces);
+	nvme_ns1 = RB_MIN(bdev_nvme_ns_tree, &nvme_ctrlr1->namespaces);
 	CU_ASSERT(nvme_ns1 != NULL);
 	CU_ASSERT(nvme_ns1 == _nvme_bdev_get_ns(nbdev, nvme_ctrlr1));
 
@@ -5014,7 +5014,7 @@ test_retry_io_for_io_path_error(void)
 	nvme_ctrlr2 = nvme_bdev_ctrlr_get_ctrlr(nbdev_ctrlr, &path2.trid, opts.hostnqn);
 	CU_ASSERT(nvme_ctrlr2 != NULL);
 
-	nvme_ns2 = RB_MIN(nvme_ns_tree, &nvme_ctrlr2->namespaces);
+	nvme_ns2 = RB_MIN(bdev_nvme_ns_tree, &nvme_ctrlr2->namespaces);
 	CU_ASSERT(nvme_ns2 != NULL);
 	CU_ASSERT(nvme_ns2 == _nvme_bdev_get_ns(nbdev, nvme_ctrlr2));
 
@@ -5127,7 +5127,7 @@ test_retry_io_count(void)
 	nbdev = nvme_bdev_ctrlr_get_bdev(nbdev_ctrlr, 1);
 	CU_ASSERT(nbdev != NULL);
 
-	nvme_ns = RB_MIN(nvme_ns_tree, &nvme_ctrlr->namespaces);
+	nvme_ns = RB_MIN(bdev_nvme_ns_tree, &nvme_ctrlr->namespaces);
 	CU_ASSERT(nvme_ns != NULL);
 
 	bdev_io = ut_alloc_bdev_io(SPDK_BDEV_IO_TYPE_WRITE, nbdev, NULL);
@@ -5426,7 +5426,7 @@ test_retry_io_for_ana_error(void)
 	nbdev = nvme_bdev_ctrlr_get_bdev(nbdev_ctrlr, 1);
 	CU_ASSERT(nbdev != NULL);
 
-	nvme_ns = RB_MIN(nvme_ns_tree, &nvme_ctrlr->namespaces);
+	nvme_ns = RB_MIN(bdev_nvme_ns_tree, &nvme_ctrlr->namespaces);
 	CU_ASSERT(nvme_ns != NULL);
 
 	bdev_io = ut_alloc_bdev_io(SPDK_BDEV_IO_TYPE_WRITE, nbdev, NULL);
@@ -5603,7 +5603,7 @@ test_retry_io_if_ctrlr_is_resetting(void)
 	nbdev = nvme_bdev_ctrlr_get_bdev(nbdev_ctrlr, 1);
 	CU_ASSERT(nbdev != NULL);
 
-	nvme_ns = RB_MIN(nvme_ns_tree, &nvme_ctrlr->namespaces);
+	nvme_ns = RB_MIN(bdev_nvme_ns_tree, &nvme_ctrlr->namespaces);
 	CU_ASSERT(nvme_ns != NULL);
 
 	bdev_io1 = ut_alloc_bdev_io(SPDK_BDEV_IO_TYPE_WRITE, nbdev, NULL);
@@ -6071,7 +6071,7 @@ test_fail_path(void)
 	nbdev = nvme_bdev_ctrlr_get_bdev(nbdev_ctrlr, 1);
 	CU_ASSERT(nbdev != NULL);
 
-	nvme_ns = RB_MIN(nvme_ns_tree, &nvme_ctrlr->namespaces);
+	nvme_ns = RB_MIN(bdev_nvme_ns_tree, &nvme_ctrlr->namespaces);
 	CU_ASSERT(nvme_ns != NULL);
 
 	ch = spdk_get_io_channel(nbdev);
@@ -7701,7 +7701,7 @@ test_ns_remove_during_reset(void)
 	nbdev = nvme_bdev_ctrlr_get_bdev(nbdev_ctrlr, 1);
 	CU_ASSERT(nbdev != NULL);
 
-	nvme_ns = RB_MIN(nvme_ns_tree, &nvme_ctrlr->namespaces);
+	nvme_ns = RB_MIN(bdev_nvme_ns_tree, &nvme_ctrlr->namespaces);
 	CU_ASSERT(nvme_ns != NULL);
 
 	/* If ns is removed during ctrlr reset, nvme_ns and bdev should still exist,
@@ -7721,7 +7721,7 @@ test_ns_remove_during_reset(void)
 	CU_ASSERT(nvme_ctrlr->resetting == false);
 	CU_ASSERT(ctrlr->adminq.is_connected == true);
 
-	CU_ASSERT(nvme_ns == RB_MIN(nvme_ns_tree, &nvme_ctrlr->namespaces));
+	CU_ASSERT(nvme_ns == RB_MIN(bdev_nvme_ns_tree, &nvme_ctrlr->namespaces));
 	CU_ASSERT(nbdev == nvme_bdev_ctrlr_get_bdev(nbdev_ctrlr, 1));
 	CU_ASSERT(nvme_ns->bdev == nbdev);
 	CU_ASSERT(nvme_ns->ns == NULL);
@@ -7732,7 +7732,7 @@ test_ns_remove_during_reset(void)
 
 	nvme_ctrlr_ns_attr_changed_cb(nvme_ctrlr, NULL, 0);
 
-	CU_ASSERT(nvme_ns == RB_MIN(nvme_ns_tree, &nvme_ctrlr->namespaces));
+	CU_ASSERT(nvme_ns == RB_MIN(bdev_nvme_ns_tree, &nvme_ctrlr->namespaces));
 	CU_ASSERT(nbdev == nvme_bdev_ctrlr_get_bdev(nbdev_ctrlr, 1));
 	CU_ASSERT(nvme_ns->bdev == nbdev);
 	CU_ASSERT(nvme_ns->ns == &ctrlr->ns[0]);

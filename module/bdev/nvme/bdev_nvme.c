@@ -384,7 +384,7 @@ nvme_ns_cmp(struct nvme_ns *ns1, struct nvme_ns *ns2)
 	return ns1->id < ns2->id ? -1 : ns1->id > ns2->id;
 }
 
-RB_GENERATE_STATIC(nvme_ns_tree, nvme_ns, node, nvme_ns_cmp);
+RB_GENERATE_STATIC(bdev_nvme_ns_tree, nvme_ns, node, nvme_ns_cmp);
 
 struct spdk_nvme_qpair *
 bdev_nvme_get_io_qpair(struct spdk_io_channel *ctrlr_io_ch)
@@ -492,7 +492,7 @@ nvme_ctrlr_get_ns(struct nvme_ctrlr *nvme_ctrlr, uint32_t nsid)
 	assert(spdk_thread_is_app_thread(NULL));
 
 	ns.id = nsid;
-	return RB_FIND(nvme_ns_tree, &nvme_ctrlr->namespaces, &ns);
+	return RB_FIND(bdev_nvme_ns_tree, &nvme_ctrlr->namespaces, &ns);
 }
 
 static struct nvme_ctrlr *
@@ -747,8 +747,8 @@ _nvme_ctrlr_delete(struct nvme_ctrlr *nvme_ctrlr)
 		nvme_bdev_ctrlr_delete(nvme_ctrlr->nbdev_ctrlr, nvme_ctrlr);
 	}
 
-	RB_FOREACH_SAFE(ns, nvme_ns_tree, &nvme_ctrlr->namespaces, tmp_ns) {
-		RB_REMOVE(nvme_ns_tree, &nvme_ctrlr->namespaces, ns);
+	RB_FOREACH_SAFE(ns, bdev_nvme_ns_tree, &nvme_ctrlr->namespaces, tmp_ns) {
+		RB_REMOVE(bdev_nvme_ns_tree, &nvme_ctrlr->namespaces, ns);
 		nvme_ns_free(ns);
 	}
 
@@ -2575,7 +2575,7 @@ nvme_ctrlr_check_namespaces(struct nvme_ctrlr *nvme_ctrlr)
 
 	assert(spdk_thread_is_app_thread(NULL));
 
-	RB_FOREACH(nvme_ns, nvme_ns_tree, &nvme_ctrlr->namespaces) {
+	RB_FOREACH(nvme_ns, bdev_nvme_ns_tree, &nvme_ctrlr->namespaces) {
 		if (!spdk_nvme_ctrlr_is_active_ns(ctrlr, nvme_ns->id)) {
 			NVME_NS_DEBUGLOG(nvme_ns, "NSID was removed during reset.\n");
 			/* NS can be added again. Just nullify nvme_ns->ns. */
@@ -5236,7 +5236,7 @@ nvme_ctrlr_depopulate_namespace_done(struct nvme_ns *nvme_ns)
 	assert(nvme_ctrlr != NULL);
 	assert(spdk_thread_is_app_thread(NULL));
 
-	RB_REMOVE(nvme_ns_tree, &nvme_ctrlr->namespaces, nvme_ns);
+	RB_REMOVE(bdev_nvme_ns_tree, &nvme_ctrlr->namespaces, nvme_ns);
 
 	if (nvme_ns->bdev != NULL) {
 		nvme_ctrlr_populate_namespaces_try_finish(nvme_ctrlr, &nvme_ns->probe_ctx);
@@ -5363,7 +5363,7 @@ nvme_ctrlr_add_ns(struct nvme_ctrlr *nvme_ctrlr, uint32_t nsid,
 		ctx->populates_in_progress++;
 	}
 
-	RB_INSERT(nvme_ns_tree, &nvme_ctrlr->namespaces, nvme_ns);
+	RB_INSERT(bdev_nvme_ns_tree, &nvme_ctrlr->namespaces, nvme_ns);
 	nvme_ctrlr_populate_namespace(nvme_ctrlr, nvme_ns);
 }
 
@@ -5388,7 +5388,7 @@ nvme_ctrlr_populate_namespaces(struct nvme_ctrlr *nvme_ctrlr,
 
 	if (!changed_ns_list) {
 		/* Full scan: check all existing namespaces and look for new ones. */
-		RB_FOREACH_SAFE(nvme_ns, nvme_ns_tree, &nvme_ctrlr->namespaces, tmp) {
+		RB_FOREACH_SAFE(nvme_ns, bdev_nvme_ns_tree, &nvme_ctrlr->namespaces, tmp) {
 			nvme_ctrlr_update_ns(nvme_ctrlr, nvme_ns);
 		}
 
@@ -5423,7 +5423,7 @@ nvme_ctrlr_depopulate_namespaces(struct nvme_ctrlr *nvme_ctrlr)
 
 	assert(spdk_thread_is_app_thread(NULL));
 
-	RB_FOREACH_SAFE(nvme_ns, nvme_ns_tree, &nvme_ctrlr->namespaces, tmp) {
+	RB_FOREACH_SAFE(nvme_ns, bdev_nvme_ns_tree, &nvme_ctrlr->namespaces, tmp) {
 		nvme_ctrlr_depopulate_namespace(nvme_ctrlr, nvme_ns);
 	}
 }
@@ -5486,7 +5486,7 @@ bdev_nvme_disable_read_ana_log_page(struct nvme_ctrlr *nvme_ctrlr)
 	spdk_free(nvme_ctrlr->ana_log_page);
 	nvme_ctrlr->ana_log_page = NULL;
 
-	RB_FOREACH(nvme_ns, nvme_ns_tree, &nvme_ctrlr->namespaces) {
+	RB_FOREACH(nvme_ns, bdev_nvme_ns_tree, &nvme_ctrlr->namespaces) {
 		nvme_ns->ana_state_updating = false;
 		nvme_ns->ana_state = SPDK_NVME_ANA_OPTIMIZED_STATE;
 	}
@@ -6695,7 +6695,7 @@ nvme_ctrlr_populate_namespaces_done(struct nvme_ctrlr *nvme_ctrlr,
 	 */
 	j = 0;
 
-	RB_FOREACH(nvme_ns, nvme_ns_tree, &nvme_ctrlr->namespaces) {
+	RB_FOREACH(nvme_ns, bdev_nvme_ns_tree, &nvme_ctrlr->namespaces) {
 		nvme_bdev = nvme_ns->bdev;
 		if (j < ctx->max_bdevs) {
 			ctx->names[j] = nvme_bdev->disk.name;
@@ -6765,7 +6765,7 @@ bdev_nvme_check_secondary_namespace(struct nvme_ctrlr *nvme_ctrlr,
 
 	assert(spdk_thread_is_app_thread(NULL));
 
-	RB_FOREACH(nvme_ns, nvme_ns_tree, &nvme_ctrlr->namespaces) {
+	RB_FOREACH(nvme_ns, bdev_nvme_ns_tree, &nvme_ctrlr->namespaces) {
 		new_ns = spdk_nvme_ctrlr_get_ns(new_ctrlr, nvme_ns->id);
 		assert(new_ns != NULL);
 
