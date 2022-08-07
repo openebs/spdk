@@ -1807,6 +1807,14 @@ void spdk_bdev_io_get_scsi_status(const struct spdk_bdev_io *bdev_io,
 void spdk_bdev_io_get_aio_status(const struct spdk_bdev_io *bdev_io, int *aio_result);
 
 /**
+ * Get the status of bdev_io as blob store errno.
+ *
+ * \param bdev_io I/O to get the status from.
+ * \param aio_result Negative errno returned from blob store.
+ */
+void spdk_bdev_io_get_bs_status(const struct spdk_bdev_io *bdev_io, int *bs_result);
+
+/**
  * Get the iovec describing the data buffer of a bdev_io.
  *
  * \param bdev_io I/O to describe with iovec.

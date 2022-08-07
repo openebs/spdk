@@ -814,17 +814,7 @@ static void
 lvol_op_comp(void *cb_arg, int bserrno)
 {
 	struct spdk_bdev_io *bdev_io = cb_arg;
-	enum spdk_bdev_io_status status = SPDK_BDEV_IO_STATUS_SUCCESS;
-
-	if (bserrno != 0) {
-		if (bserrno == -ENOMEM) {
-			status = SPDK_BDEV_IO_STATUS_NOMEM;
-		} else {
-			status = SPDK_BDEV_IO_STATUS_FAILED;
-		}
-	}
-
-	spdk_bdev_io_complete(bdev_io, status);
+	spdk_bdev_io_complete_bs_status(bdev_io, bserrno);
 }
 
 static void

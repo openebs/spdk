@@ -274,6 +274,10 @@ struct spdk_bdev_fn_table {
 
 /** bdev I/O completion status */
 enum spdk_bdev_io_status {
+    	/*
+    	 * Indicates an error from blob store layer.
+    	 */
+	SPDK_BDEV_IO_STATUS_BS_ERROR = -9,
 	SPDK_BDEV_IO_STATUS_AIO_ERROR = -8,
 	SPDK_BDEV_IO_STATUS_ABORTED = -7,
 	SPDK_BDEV_IO_STATUS_FIRST_FUSED_FAILED = -6,
@@ -728,6 +732,8 @@ struct spdk_bdev_io {
 			} scsi;
 			/** Only valid when status is SPDK_BDEV_IO_STATUS_AIO_ERROR */
 			int aio_result;
+			/** Only valid when status is SPDK_BDEV_IO_STATUS_BS_ERROR */
+			int bs_result;
 		} error;
 
 		/**
@@ -1022,6 +1028,14 @@ void spdk_bdev_io_complete_scsi_status(struct spdk_bdev_io *bdev_io, enum spdk_s
  * \param aio_result Negative errno returned from AIO.
  */
 void spdk_bdev_io_complete_aio_status(struct spdk_bdev_io *bdev_io, int aio_result);
+
+/**
+ * Complete a bdev_io with blob store errno.
+ *
+ * \param bdev_io I/O to complete.
+ * \param bserrno Negative errno from blob store.
+ */
+void spdk_bdev_io_complete_bs_status(struct spdk_bdev_io *bdev_io, int bserrno);
 
 /**
  * Get a thread that given bdev_io was submitted on.

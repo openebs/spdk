@@ -5919,6 +5919,44 @@ spdk_bdev_io_get_aio_status(const struct spdk_bdev_io *bdev_io, int *aio_result)
 }
 
 void
+spdk_bdev_io_complete_bs_status(struct spdk_bdev_io *bdev_io, int bserrno)
+{
+	enum spdk_bdev_io_status status;
+
+	switch (bserrno) {
+	case 0:
+		status = SPDK_BDEV_IO_STATUS_SUCCESS;
+		break;
+	case -ENOMEM:
+		status = SPDK_BDEV_IO_STATUS_NOMEM;
+		break;
+	case -ENOSPC:
+		status = SPDK_BDEV_IO_STATUS_BS_ERROR;
+		bdev_io->internal.error.bs_result = bserrno;
+		break;
+	default:
+		status = SPDK_BDEV_IO_STATUS_FAILED;
+		break;
+	}
+
+	spdk_bdev_io_complete(bdev_io, status);
+}
+
+void
+spdk_bdev_io_get_bs_status(const struct spdk_bdev_io *bdev_io, int *bs_result)
+{
+	assert(bs_result != NULL);
+
+	if (bdev_io->internal.status == SPDK_BDEV_IO_STATUS_BS_ERROR) {
+		*bs_result = bdev_io->internal.error.bs_result;
+	} else if (bdev_io->internal.status == SPDK_BDEV_IO_STATUS_SUCCESS) {
+		*bs_result = 0;
+	} else {
+		*bs_result = -EIO;
+	}
+}
+
+void
 spdk_bdev_io_complete_nvme_status(struct spdk_bdev_io *bdev_io, uint32_t cdw0, int sct, int sc)
 {
 	if (sct == SPDK_NVME_SCT_GENERIC && sc == SPDK_NVME_SC_SUCCESS) {
