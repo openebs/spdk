@@ -407,7 +407,8 @@ static int bdev_readv_blocks_with_md(struct spdk_bdev_desc *desc, struct spdk_io
 				     uint64_t num_blocks,
 				     struct spdk_memory_domain *domain, void *domain_ctx,
 				     struct spdk_accel_sequence *seq,
-				     spdk_bdev_io_completion_cb cb, void *cb_arg);
+				     spdk_bdev_io_completion_cb cb, void *cb_arg,
+				     uint32_t ext_io_flags);
 static int bdev_writev_blocks_with_md(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 				      struct iovec *iov, int iovcnt, void *md_buf,
 				      uint64_t offset_blocks, uint64_t num_blocks,
@@ -2993,7 +2994,7 @@ bdev_io_split_submit(struct spdk_bdev_io *bdev_io, struct iovec *iov, int iovcnt
 					       iov, iovcnt, md_buf, current_offset,
 					       num_blocks, bdev_io->internal.memory_domain,
 					       bdev_io->internal.memory_domain_ctx, NULL,
-					       bdev_io_split_done, bdev_io);
+					       bdev_io_split_done, bdev_io, 0);
 		break;
 	case SPDK_BDEV_IO_TYPE_WRITE:
 		assert(bdev_io->u.bdev.accel_sequence == NULL);
@@ -3381,6 +3382,7 @@ static void
 bdev_io_split(struct spdk_bdev_io *bdev_io)
 {
 	assert(bdev_io_should_split(bdev_io));
+	assert(!(bdev_io->u.bdev.ext_io_flags & SPDK_NVME_IO_FLAGS_UNWRITTEN_READ_FAIL));
 
 	bdev_io->u.bdev.split_current_offset_blocks = bdev_io->u.bdev.offset_blocks;
 	bdev_io->u.bdev.split_remaining_num_blocks = bdev_io->u.bdev.num_blocks;
@@ -5230,7 +5232,8 @@ spdk_bdev_io_get_seek_offset(const struct spdk_bdev_io *bdev_io)
 static int
 bdev_read_blocks_with_md(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch, void *buf,
 			 void *md_buf, uint64_t offset_blocks, uint64_t num_blocks,
-			 spdk_bdev_io_completion_cb cb, void *cb_arg)
+			 spdk_bdev_io_completion_cb cb, void *cb_arg,
+			 uint32_t ext_io_flags)
 {
 	struct spdk_bdev *bdev = spdk_bdev_desc_get_bdev(desc);
 	struct spdk_bdev_io *bdev_io;
@@ -5258,6 +5261,7 @@ bdev_read_blocks_with_md(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch
 	bdev_io->u.bdev.memory_domain = NULL;
 	bdev_io->u.bdev.memory_domain_ctx = NULL;
 	bdev_io->u.bdev.accel_sequence = NULL;
+	bdev_io->u.bdev.ext_io_flags = ext_io_flags;
 	bdev_io_init(bdev_io, bdev, cb_arg, cb);
 
 	bdev_io_submit(bdev_io);
@@ -5269,6 +5273,15 @@ spdk_bdev_read(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	       void *buf, uint64_t offset, uint64_t nbytes,
 	       spdk_bdev_io_completion_cb cb, void *cb_arg)
 {
+	return spdk_bdev_read_with_flags(desc, ch, buf, offset, nbytes, cb, cb_arg, 0);
+}
+
+int
+spdk_bdev_read_with_flags(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+			  void *buf, uint64_t offset, uint64_t nbytes,
+			  spdk_bdev_io_completion_cb cb, void *cb_arg,
+			  uint32_t ext_io_flags)
+{
 	uint64_t offset_blocks, num_blocks;
 
 	if (bdev_bytes_to_blocks(spdk_bdev_desc_get_bdev(desc), offset, &offset_blocks,
@@ -5276,7 +5289,8 @@ spdk_bdev_read(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 		return -EINVAL;
 	}
 
-	return spdk_bdev_read_blocks(desc, ch, buf, offset_blocks, num_blocks, cb, cb_arg);
+	return spdk_bdev_read_blocks_with_flags(desc, ch, buf, offset_blocks, num_blocks, cb, cb_arg,
+						ext_io_flags);
 }
 
 int
@@ -5284,7 +5298,18 @@ spdk_bdev_read_blocks(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 		      void *buf, uint64_t offset_blocks, uint64_t num_blocks,
 		      spdk_bdev_io_completion_cb cb, void *cb_arg)
 {
-	return bdev_read_blocks_with_md(desc, ch, buf, NULL, offset_blocks, num_blocks, cb, cb_arg);
+	return bdev_read_blocks_with_md(desc, ch, buf, NULL, offset_blocks, num_blocks, cb, cb_arg,
+					0);
+}
+
+int
+spdk_bdev_read_blocks_with_flags(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+				 void *buf, uint64_t offset_blocks, uint64_t num_blocks,
+				 spdk_bdev_io_completion_cb cb, void *cb_arg,
+				 uint32_t ext_io_flags)
+{
+	return bdev_read_blocks_with_md(desc, ch, buf, NULL, offset_blocks, num_blocks, cb, cb_arg,
+					ext_io_flags);
 }
 
 int
@@ -5305,7 +5330,8 @@ spdk_bdev_read_blocks_with_md(struct spdk_bdev_desc *desc, struct spdk_io_channe
 	}
 
 	return bdev_read_blocks_with_md(desc, ch, buf, md_buf, offset_blocks, num_blocks,
-					cb, cb_arg);
+					cb, cb_arg,
+					0);
 }
 
 int
@@ -5329,7 +5355,8 @@ bdev_readv_blocks_with_md(struct spdk_bdev_desc *desc, struct spdk_io_channel *c
 			  struct iovec *iov, int iovcnt, void *md_buf, uint64_t offset_blocks,
 			  uint64_t num_blocks, struct spdk_memory_domain *domain, void *domain_ctx,
 			  struct spdk_accel_sequence *seq,
-			  spdk_bdev_io_completion_cb cb, void *cb_arg)
+			  spdk_bdev_io_completion_cb cb, void *cb_arg,
+			  uint32_t ext_io_flags)
 {
 	struct spdk_bdev *bdev = spdk_bdev_desc_get_bdev(desc);
 	struct spdk_bdev_io *bdev_io;
@@ -5360,6 +5387,7 @@ bdev_readv_blocks_with_md(struct spdk_bdev_desc *desc, struct spdk_io_channel *c
 	bdev_io->u.bdev.memory_domain = domain;
 	bdev_io->u.bdev.memory_domain_ctx = domain_ctx;
 	bdev_io->u.bdev.accel_sequence = seq;
+	bdev_io->u.bdev.ext_io_flags = ext_io_flags;
 
 	_bdev_io_submit_ext(desc, bdev_io);
 
@@ -5373,7 +5401,20 @@ spdk_bdev_readv_blocks(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 		       spdk_bdev_io_completion_cb cb, void *cb_arg)
 {
 	return bdev_readv_blocks_with_md(desc, ch, iov, iovcnt, NULL, offset_blocks,
-					 num_blocks, NULL, NULL, NULL, cb, cb_arg);
+					 num_blocks, NULL, NULL, NULL, cb, cb_arg,
+					 0);
+}
+
+int
+spdk_bdev_readv_blocks_with_flags(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+				  struct iovec *iov, int iovcnt,
+				  uint64_t offset_blocks, uint64_t num_blocks,
+				  spdk_bdev_io_completion_cb cb, void *cb_arg,
+				  uint32_t ext_io_flags)
+{
+	return bdev_readv_blocks_with_md(desc, ch, iov, iovcnt, NULL, offset_blocks,
+					 num_blocks, NULL, NULL, NULL, cb, cb_arg,
+					 ext_io_flags);
 }
 
 int
@@ -5391,7 +5432,8 @@ spdk_bdev_readv_blocks_with_md(struct spdk_bdev_desc *desc, struct spdk_io_chann
 	}
 
 	return bdev_readv_blocks_with_md(desc, ch, iov, iovcnt, md_buf, offset_blocks,
-					 num_blocks, NULL, NULL, NULL, cb, cb_arg);
+					 num_blocks, NULL, NULL, NULL, cb, cb_arg,
+					 0);
 }
 
 static inline bool
@@ -5415,6 +5457,18 @@ spdk_bdev_readv_blocks_ext(struct spdk_bdev_desc *desc, struct spdk_io_channel *
 			   uint64_t offset_blocks, uint64_t num_blocks,
 			   spdk_bdev_io_completion_cb cb, void *cb_arg,
 			   struct spdk_bdev_ext_io_opts *opts)
+{
+	return spdk_bdev_readv_blocks_ext_with_flags(desc, ch, iov, iovcnt, offset_blocks,
+			num_blocks, cb, cb_arg,
+			opts, 0);
+}
+
+int
+spdk_bdev_readv_blocks_ext_with_flags(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
+				      struct iovec *iov, int iovcnt,
+				      uint64_t offset_blocks, uint64_t num_blocks,
+				      spdk_bdev_io_completion_cb cb, void *cb_arg,
+				      struct spdk_bdev_ext_io_opts *opts, uint32_t ext_io_flags)
 {
 	void *md = NULL;
 
@@ -5440,7 +5494,8 @@ spdk_bdev_readv_blocks_ext(struct spdk_bdev_desc *desc, struct spdk_io_channel *
 					 bdev_get_ext_io_opt(opts, memory_domain, NULL),
 					 bdev_get_ext_io_opt(opts, memory_domain_ctx, NULL),
 					 bdev_get_ext_io_opt(opts, accel_sequence, NULL),
-					 cb, cb_arg);
+					 cb, cb_arg,
+					 ext_io_flags);
 }
 
 static int
