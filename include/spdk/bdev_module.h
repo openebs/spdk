@@ -831,6 +831,9 @@ struct spdk_bdev_io_block_params {
 	/* Sequence of accel operations */
 	struct spdk_accel_sequence *accel_sequence;
 
+	/** Additional I/O flags */
+	uint32_t ext_io_flags;
+
 	/* Metadata buffer */
 	void *md_buf;
 
