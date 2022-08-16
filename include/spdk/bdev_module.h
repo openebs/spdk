@@ -809,6 +809,9 @@ struct spdk_bdev_io {
 			/* Sequence of accel operations */
 			struct spdk_accel_sequence *accel_sequence;
 
+			/** Additional I/O flags */
+			uint32_t ext_io_flags;
+
 			/** stored user callback in case we split the I/O and use a temporary callback */
 			spdk_bdev_io_completion_cb stored_user_cb;
 
