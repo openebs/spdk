@@ -57,11 +57,15 @@
 	spdk_bdev_seek_data;
 	spdk_bdev_seek_hole;
 	spdk_bdev_read;
+	spdk_bdev_read_with_flags;
 	spdk_bdev_read_blocks;
+	spdk_bdev_read_blocks_with_flags;
 	spdk_bdev_read_blocks_with_md;
 	spdk_bdev_readv;
 	spdk_bdev_readv_blocks;
+	spdk_bdev_readv_blocks_with_flags;
 	spdk_bdev_readv_blocks_with_md;
+	spdk_bdev_readv_blocks_ext_with_flags;
 	spdk_bdev_write;
 	spdk_bdev_write_blocks;
 	spdk_bdev_write_blocks_with_md;
