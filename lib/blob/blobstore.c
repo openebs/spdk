@@ -16,6 +16,7 @@
 #include "spdk/likely.h"
 #include "spdk/util.h"
 #include "spdk/string.h"
+#include "spdk/bdev_module.h"
 
 #include "spdk_internal/assert.h"
 #include "spdk/log.h"
@@ -144,6 +145,9 @@ bs_allocate_cluster(struct spdk_blob *blob, uint32_t cluster_num,
 	uint32_t *extent_page = 0;
 
 	assert(spdk_spin_held(&blob->bs->used_lock));
+
+	/* Reset cache of used clusters */
+	blob->num_used_clusters_cache = 0;
 
 	*cluster = bs_claim_cluster(blob->bs);
 	if (*cluster == UINT32_MAX) {
@@ -2999,7 +3003,8 @@ blob_request_submit_rw_iov(struct spdk_blob *blob, struct spdk_io_channel *_chan
 			   uint64_t offset, uint64_t length, spdk_blob_op_complete cb_fn, void *cb_arg, bool read,
 			   struct spdk_blob_ext_io_opts *ext_io_opts)
 {
-	struct spdk_bs_cpl	cpl;
+	struct spdk_bs_cpl cpl;
+	struct spdk_bdev_io *bdev_io = cb_arg;
 
 	assert(blob != NULL);
 
@@ -3064,6 +3069,15 @@ blob_request_submit_rw_iov(struct spdk_blob *blob, struct spdk_io_channel *_chan
 		if (read) {
 			spdk_bs_sequence_t *seq;
 
+			if (bdev_io->u.bdev.ext_io_flags & SPDK_NVME_IO_FLAGS_UNWRITTEN_READ_FAIL) {
+				if (!is_allocated) {
+					/* ETXTBSY was chosen to indicate read of unwritten block.
+					 * It is not used by SPDK, so it should be fine. */
+					cb_fn(cb_arg, -ETXTBSY);
+					return;
+				}
+			}
+
 			seq = bs_sequence_start(_channel, &cpl);
 			if (!seq) {
 				cb_fn(cb_arg, -ENOMEM);
@@ -3109,6 +3123,8 @@ blob_request_submit_rw_iov(struct spdk_blob *blob, struct spdk_io_channel *_chan
 		}
 	} else {
 		struct rw_iov_ctx *ctx;
+
+		assert(!(bdev_io->u.bdev.ext_io_flags & SPDK_NVME_IO_FLAGS_UNWRITTEN_READ_FAIL));
 
 		ctx = calloc(1, sizeof(struct rw_iov_ctx) + iovcnt * sizeof(struct iovec));
 		if (ctx == NULL) {
@@ -5713,6 +5729,38 @@ uint64_t
 spdk_blob_get_next_unallocated_io_unit(struct spdk_blob *blob, uint64_t offset)
 {
 	return blob_find_io_unit(blob, offset, false);
+}
+
+uint64_t spdk_blob_calc_used_clusters(struct spdk_blob *blob)
+{
+	size_t i;
+	uint64_t num;
+
+	assert(blob != NULL);
+
+	if (!spdk_blob_is_thin_provisioned(blob)) {
+		return spdk_blob_get_num_clusters(blob);
+	}
+
+	spdk_spin_lock(&blob->bs->used_lock);
+
+	if (blob->num_used_clusters_cache > 0) {
+		num = blob->num_used_clusters_cache;
+		spdk_spin_unlock(&blob->bs->used_lock);
+		return num;
+	}
+
+	num = 0;
+	for (i = 0; i < blob->active.cluster_array_size; ++i) {
+		if (blob->active.clusters[i] != 0) {
+			++num;
+		}
+	}
+	blob->num_used_clusters_cache = num;
+
+	spdk_spin_unlock(&blob->bs->used_lock);
+
+	return num;
 }
 
 /* START spdk_bs_create_blob */
