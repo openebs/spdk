@@ -107,6 +107,8 @@ _nvme_ns_cmd_split_request(struct spdk_nvme_ns *ns,
 	uint32_t		remaining_lba_count = lba_count;
 	struct nvme_request	*child;
 
+	assert(!(io_flags & SPDK_NVME_IO_FLAGS_UNWRITTEN_READ_FAIL));
+
 	while (remaining_lba_count > 0) {
 		lba_count = sectors_per_max_io - (lba & sector_mask);
 		lba_count = spdk_min(remaining_lba_count, lba_count);
@@ -192,6 +194,8 @@ _nvme_ns_cmd_split_request_prp(struct spdk_nvme_ns *ns,
 	uint32_t sge_length;
 	uint32_t page_size = qpair->ctrlr->page_size;
 	uintptr_t address;
+
+	assert(!(io_flags & SPDK_NVME_IO_FLAGS_UNWRITTEN_READ_FAIL));
 
 	reset_sgl_fn(sgl_cb_arg, payload_offset);
 	next_sge_fn(sgl_cb_arg, (void **)&address, &sge_length);
@@ -314,6 +318,8 @@ _nvme_ns_cmd_split_request_sgl(struct spdk_nvme_ns *ns,
 	uint32_t sge_length;
 	uint16_t max_sges, num_sges;
 	uintptr_t address;
+
+	assert(!(io_flags & SPDK_NVME_IO_FLAGS_UNWRITTEN_READ_FAIL));
 
 	max_sges = ns->ctrlr->max_sges;
 
