@@ -35,6 +35,8 @@ extern "C" {
  */
 struct spdk_nvme_ctrlr;
 
+struct spdk_nvme_qpair;
+
 /**
  * NVMe controller initialization options.
  *
@@ -313,6 +315,29 @@ struct spdk_nvme_accel_fn_table {
 	/** The accelerated crc32c function. */
 	void (*submit_accel_crc32c)(void *ctx, uint32_t *dst, struct iovec *iov,
 				    uint32_t iov_cnt, uint32_t seed, spdk_nvme_accel_completion_cb cb_fn, void *cb_arg);
+};
+
+/**
+ * I/O qpair connection callback.
+ *
+ * \param qpair Opaque handle to the qpair to connect.
+ * \param cb_arg Opaque value passed to spdk_nvme_connect_cb().
+ */
+typedef void (*spdk_io_qpair_connect_cb)(struct spdk_nvme_qpair *qpair, void *cb_arg);
+
+enum io_qpair_connect_state {
+	INIT,               /* Newly initiated connection. */
+	WAIT_FOR_CONNECT,   /* Connection initiated. */
+	CONNECTED,          /* Connection successfully completed. */
+};
+
+/**
+ * Context for asynchronous I/O qpair connection.
+ */
+struct spdk_nvme_io_qpair_connect_ctx {
+	spdk_io_qpair_connect_cb        cb_fn;
+	void                            *cb_arg;
+	enum io_qpair_connect_state     state;
 };
 
 /**
@@ -1666,6 +1691,49 @@ struct spdk_nvme_qpair *spdk_nvme_ctrlr_alloc_io_qpair(struct spdk_nvme_ctrlr *c
  *
  */
 int spdk_nvme_ctrlr_connect_io_qpair(struct spdk_nvme_ctrlr *ctrlr, struct spdk_nvme_qpair *qpair);
+
+/**
+ * Initiate connection for an I/O qpair.
+ *
+ * This function prepares a context to be polled asynchronously to complete
+ * connection.
+ *
+ * \param ctrlr NVMe controller for which to connect I/O qpair.
+ * \param qpair Opaque handle to the qpair to connect.
+ * \param cb_fn Callback function invoked when the I/O is connected.
+ * \param cb_arg Argument passed to callback function.
+ *
+ * \return probe context on success, NULL on failure.
+ *
+ */
+struct spdk_nvme_io_qpair_connect_ctx *spdk_nvme_ctrlr_connect_io_qpair_async(
+	struct spdk_nvme_ctrlr *ctrlr,
+	struct spdk_nvme_qpair *qpair,
+	spdk_io_qpair_connect_cb cb_fn,
+	void *cb_arg);
+
+/**
+ * Proceed with connecting I/O qpair associated with the connect context.
+ *
+ * The probe context is one returned from a previous call to
+ * spdk_nvme_ctrlr_connect_io_qpair_async().  Users must call this function on the
+ * probe context until it returns 0.
+ * Note that target I/O qpair must be created with asynchronous mode turned on (via
+ * spdk_nvme_io_qpair_opts).
+ *
+ * \param connect_ctx Context used to track probe actions.
+ *
+ * \return 0 if all probe operations are complete; the completion callback is called
+ * and the connection ctx is freed and is no longer valid.
+ * \return 1 if there are still pending connect operations; user must call
+ * spdk_nvme_ctrlr_io_qpair_connect_poll_async again to continue progress.
+ * \return a negative errno value returned indicates a failure during polling.
+ * In case of such errors the completion callback is not called, connection ctx
+ * is freed and is no longer valid.
+ */
+int spdk_nvme_ctrlr_io_qpair_connect_poll_async(
+	struct spdk_nvme_qpair *qpair,
+	struct spdk_nvme_io_qpair_connect_ctx *probe_ctx);
 
 /**
  * Disconnect the given I/O qpair.
