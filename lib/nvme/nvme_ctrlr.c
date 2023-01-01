@@ -410,6 +410,104 @@ nvme_ctrlr_create_io_qpair(struct spdk_nvme_ctrlr *ctrlr,
 	return qpair;
 }
 
+struct spdk_nvme_io_qpair_connect_ctx *spdk_nvme_ctrlr_connect_io_qpair_async(
+	struct spdk_nvme_ctrlr *ctrlr,
+	struct spdk_nvme_qpair *qpair,
+	spdk_io_qpair_connect_cb cb_fn,
+	void *cb_arg)
+{
+	struct spdk_nvme_io_qpair_connect_ctx *poll_ctx;
+
+	// Check if I/O qpair supports asynchronous qpair connection.
+	if (!qpair->async) {
+		SPDK_ERRLOG("asynchronous mode is turned of for I/O qpair 0x%p", qpair);
+		return NULL;
+	}
+
+	poll_ctx = calloc(1, sizeof(*poll_ctx));
+	if (!poll_ctx) {
+		return NULL;
+	}
+
+	poll_ctx->cb_fn = cb_fn;
+	poll_ctx->cb_arg = cb_arg;
+	poll_ctx->state = INIT;
+
+	return poll_ctx;
+}
+
+int spdk_nvme_ctrlr_io_qpair_connect_poll_async(
+	struct spdk_nvme_qpair *qpair,
+	struct spdk_nvme_io_qpair_connect_ctx *probe_ctx)
+{
+	int rc = 0;
+	int n;
+
+	switch (probe_ctx->state) {
+	case INIT:
+		// Check if I/O qpair supports asynchronous qpair connection.
+		if (!qpair->async) {
+			SPDK_ERRLOG("asynchronous mode is turned off for I/O qpair 0x%p", qpair);
+			rc = -ENXIO;
+			goto out_error;
+		}
+
+		// Initiate I/O qpair connection.
+		rc = nvme_transport_ctrlr_connect_qpair(qpair->ctrlr, qpair);
+		if (rc != 0) {
+			goto out_error;
+		}
+		probe_ctx->state = WAIT_FOR_CONNECT;
+		break;
+	case WAIT_FOR_CONNECT:
+		n = spdk_nvme_qpair_process_completions(qpair, 0);
+
+		// Check for transport errors.
+		if (n < 0) {
+			rc = -n;
+			goto out_error;
+		}
+
+		switch (nvme_qpair_get_state(qpair)) {
+		case NVME_QPAIR_CONNECTING:
+			break;
+		case NVME_QPAIR_CONNECTED:
+			nvme_qpair_set_state(qpair, NVME_QPAIR_ENABLED);
+		/* fallthrough */
+		case NVME_QPAIR_ENABLED:
+			probe_ctx->state = CONNECTED;
+			goto out_notify;
+		case NVME_QPAIR_DISCONNECTING:
+			assert(qpair->async == true);
+			break;
+		case NVME_QPAIR_DISCONNECTED:
+		/* fallthrough */
+		default:
+			break;
+		}
+		break;
+	default:
+		// Should not get here in case of errors as polling should have stopped.
+		assert(false);
+	}
+
+	// Trigger the next polling round.
+	return 1;
+
+	// Report polling error and request to stop polling.
+out_error:
+	free(probe_ctx);
+	return rc;
+
+	// Notify the callback and request to stop polling.
+out_notify:
+	if (probe_ctx->cb_fn) {
+		probe_ctx->cb_fn(qpair, probe_ctx->cb_arg);
+	}
+	free(probe_ctx);
+	return 0;
+}
+
 int
 spdk_nvme_ctrlr_connect_io_qpair(struct spdk_nvme_ctrlr *ctrlr, struct spdk_nvme_qpair *qpair)
 {
