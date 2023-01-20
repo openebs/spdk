@@ -363,6 +363,7 @@ struct spdk_nvmf_subsystem {
 	 * It will be enough for ANA group to use the same size as namespaces.
 	 */
 	uint32_t					*ana_group;
+	spdk_nvmf_subsystem_event_cb nvmf_ss_event_cb;
 };
 
 int nvmf_poll_group_add_transport(struct spdk_nvmf_poll_group *group,
