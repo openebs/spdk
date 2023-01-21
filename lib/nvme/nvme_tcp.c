@@ -391,7 +391,7 @@ nvme_tcp_ctrlr_delete_io_qpair(struct spdk_nvme_ctrlr *ctrlr, struct spdk_nvme_q
 
 	nvme_qpair_deinit(qpair);
 	nvme_tcp_free_reqs(tqpair);
-	if (!tqpair->shared_stats) {
+	if (!tqpair->shared_stats && tqpair->stats != &g_dummy_stats) {
 		free(tqpair->stats);
 	}
 	free(tqpair);
@@ -2866,7 +2866,9 @@ nvme_tcp_poll_group_remove(struct spdk_nvme_transport_poll_group *tgroup,
 	tqpair = nvme_tcp_qpair(qpair);
 	group = nvme_tcp_poll_group(tgroup);
 
-	assert(tqpair->shared_stats == true);
+	if (!tqpair->shared_stats) {
+		free(tqpair->stats);
+	}
 	tqpair->stats = &g_dummy_stats;
 
 	if (tqpair->needs_poll) {
