@@ -409,7 +409,9 @@ nvme_tcp_ctrlr_disconnect_qpair_done(struct spdk_nvme_qpair *qpair)
 	if (qpair->poll_group) {
 		struct nvme_tcp_poll_group *group = nvme_tcp_poll_group(qpair->poll_group);
 
-		assert(tqpair->shared_stats == true);
+		if (!tqpair->shared_stats) {
+			free(tqpair->stats);
+		}
 		tqpair->stats = &g_dummy_stats;
 		if (TAILQ_ENTRY_ENQUEUED(tqpair, link_poll)) {
 			TAILQ_REMOVE_CLEAR(&group->needs_poll, tqpair, link_poll);
@@ -498,7 +500,7 @@ nvme_tcp_ctrlr_delete_io_qpair(struct spdk_nvme_ctrlr *ctrlr, struct spdk_nvme_q
 
 	nvme_qpair_deinit(qpair);
 	nvme_tcp_free_reqs(tqpair);
-	if (!tqpair->shared_stats) {
+	if (!tqpair->shared_stats && tqpair->stats != &g_dummy_stats) {
 		free(tqpair->stats);
 	}
 	free(tqpair);
