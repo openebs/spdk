@@ -542,4 +542,8 @@ int nvmf_bdev_ctrlr_zcopy_start(struct spdk_bdev *bdev,
  */
 void nvmf_bdev_ctrlr_zcopy_end(struct spdk_nvmf_request *req, bool commit);
 
+
+void notify_subsystem_events(struct spdk_nvmf_subsystem *subsystem,
+						void *cb_arg,
+						spdk_nvmf_subsystem_events event);
 #endif /* __NVMF_INTERNAL_H__ */

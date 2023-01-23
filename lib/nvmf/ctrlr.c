@@ -210,7 +210,7 @@ nvmf_ctrlr_keep_alive_poll(void *ctx)
 					      ctrlr,
 					      nvmf_ctrlr_disconnect_qpairs_done);
 			if(ctrlr->subsys->nvmf_ss_event_cb)
-				ctrlr->subsys->nvmf_ss_event_cb(ctrlr->subsys, ctrlr, SPDK_NVMF_SS_INIATOR_TIMEOUT);
+				notify_subsystem_events(ctrlr->subsys, ctrlr, SPDK_NVMF_SS_INIATOR_TIMEOUT);
 			return SPDK_POLLER_BUSY;
 		}
 	}
@@ -782,7 +782,7 @@ _nvmf_ctrlr_connect(struct spdk_nvmf_request *req)
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		} else {
 			if(subsystem->nvmf_ss_event_cb)
-				subsystem->nvmf_ss_event_cb(subsystem, ctrlr, SPDK_NVMF_SS_INIATOR_CONNECT);
+				notify_subsystem_events(subsystem, ctrlr, SPDK_NVMF_SS_INIATOR_CONNECT);
 
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_ASYNCHRONOUS;
 		}
@@ -1130,7 +1130,7 @@ nvmf_prop_set_cc(struct spdk_nvmf_ctrlr *ctrlr, uint32_t value)
 					      ctrlr,
 					      nvmf_ctrlr_cc_reset_shn_done);
 			if( ctrlr->subsys->nvmf_ss_event_cb )
-				ctrlr->subsys->nvmf_ss_event_cb(ctrlr->subsys, ctrlr, SPDK_NVMF_SS_INIATOR_DISCONNECT);
+				notify_subsystem_events(ctrlr->subsys, ctrlr, SPDK_NVMF_SS_INIATOR_DISCONNECT);
 		}
 		diff.bits.en = 0;
 	}
@@ -1163,7 +1163,7 @@ nvmf_prop_set_cc(struct spdk_nvmf_ctrlr *ctrlr, uint32_t value)
 			 * Keep Alive timer */
 			nvmf_ctrlr_stop_keep_alive_timer(ctrlr);
 			if(ctrlr->subsys->nvmf_ss_event_cb)
-				ctrlr->subsys->nvmf_ss_event_cb(ctrlr->subsys, ctrlr, SPDK_NVMF_SS_INIATOR_DISCONNECT);
+				notify_subsystem_events(ctrlr->subsys, ctrlr, SPDK_NVMF_SS_INIATOR_DISCONNECT);
 		} else if (cc.bits.shn == 0) {
 			ctrlr->vcprop.cc.bits.shn = 0;
 		} else {
