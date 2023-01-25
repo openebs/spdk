@@ -348,13 +348,6 @@ spdk_nvmf_subsystem_register_for_event(struct spdk_nvmf_subsystem *subsystem,
 	return 0;
 }
 
-void
-notify_subsystem_events(struct spdk_nvmf_subsystem *subsystem,
-						void *cb_arg,
-						spdk_nvmf_subsystem_events event)
-{
-	subsystem->nvmf_ss_event_cb(subsystem, cb_arg, event);
-}
 /* Must hold subsystem->mutex while calling this function */
 static void
 nvmf_subsystem_remove_host(struct spdk_nvmf_subsystem *subsystem, struct spdk_nvmf_host *host)
