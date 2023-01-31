@@ -307,6 +307,16 @@ spdk_nvmf_subsystem_create(struct spdk_nvmf_tgt *tgt,
 	return subsystem;
 }
 
+/* Register a callback function for the subsystem events */
+int
+spdk_nvmf_subsystem_register_for_event(struct spdk_nvmf_subsystem *subsystem,
+						spdk_nvmf_subsystem_event_cb cb)
+{
+	subsystem->nvmf_ss_event_cb = cb;
+	SPDK_INFOLOG(nvmf, "Subsystem Event callback Registered for %s\n",subsystem->subnqn);
+	return 0;
+}
+
 /* Must hold subsystem->mutex while calling this function */
 static void
 nvmf_subsystem_remove_host(struct spdk_nvmf_subsystem *subsystem, struct spdk_nvmf_host *host)
