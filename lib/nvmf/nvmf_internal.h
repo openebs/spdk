@@ -431,6 +431,8 @@ struct spdk_nvmf_subsystem {
 	TAILQ_HEAD(, nvmf_subsystem_state_change_ctx)	state_changes;
 	/* In-band authentication sequence number, protected by ->mutex */
 	uint32_t					auth_seqnum;
+	/* Subsystem event callback */
+	spdk_nvmf_subsystem_event_cb nvmf_ss_event_cb;
 };
 
 extern spdk_nvmf_custom_discovery_filter g_custom_discovery_filter;
@@ -737,5 +739,14 @@ uint16_t nvmf_subsystem_gen_cntlid(struct spdk_nvmf_subsystem *subsystem);
 
 int nvmf_subsystem_copy_sn(char *dst, const char *sn, size_t size);
 int nvmf_subsystem_copy_mn(char *dst, const char *mn, size_t size);
+static inline void
+notify_subsystem_events(struct spdk_nvmf_subsystem *subsystem,
+			void *cb_arg,
+			spdk_nvmf_subsystem_events event)
+{
+	if (subsystem->nvmf_ss_event_cb) {
+		subsystem->nvmf_ss_event_cb(subsystem, cb_arg, event);
+	}
+}
 
 #endif /* __NVMF_INTERNAL_H__ */
