@@ -357,6 +357,8 @@ struct spdk_nvmf_subsystem {
 	/* In-band authentication sequence number, protected by ->mutex */
 	uint32_t					auth_seqnum;
 	bool						passthrough;
+	/* Subsystem event callback */
+	spdk_nvmf_subsystem_event_cb nvmf_ss_event_cb;
 };
 
 static int
@@ -637,5 +639,15 @@ nvmf_get_transport_poll_group(struct spdk_nvmf_poll_group *group,
  * \return unique controller id or 0xFFFF when all controller ids are in use
  */
 uint16_t nvmf_subsystem_gen_cntlid(struct spdk_nvmf_subsystem *subsystem);
+
+static inline void
+notify_subsystem_events(struct spdk_nvmf_subsystem *subsystem,
+			void *cb_arg,
+			spdk_nvmf_subsystem_events event)
+{
+	if (subsystem->nvmf_ss_event_cb) {
+		subsystem->nvmf_ss_event_cb(subsystem, cb_arg, event);
+	}
+}
 
 #endif /* __NVMF_INTERNAL_H__ */
