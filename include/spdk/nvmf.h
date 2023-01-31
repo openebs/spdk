@@ -460,6 +460,43 @@ typedef void (*spdk_nvmf_subsystem_state_change_done)(struct spdk_nvmf_subsystem
 		void *cb_arg, int status);
 
 /**
+ * List of subsystem events to be propaged downstream.
+ */
+typedef enum spdk_nvmf_subsystem_events_t {
+	/* Reserved */
+	SPDK_NVMF_SS_NONE = 0,
+	/** Initator connect event */
+	SPDK_NVMF_SS_INIATOR_CONNECT,
+	/** Initator disconnect event */
+	SPDK_NVMF_SS_INIATOR_DISCONNECT,
+	/** Initator timeout event */
+	SPDK_NVMF_SS_INIATOR_TIMEOUT
+} spdk_nvmf_subsystem_events;
+
+/**
+ * Function to be called on subsystem events.
+ *
+ * \param subsystem NVMe-oF subsystem that has events to report.
+ * \param cb_arg Argument passed by callback function.
+ * \param spdk_nvmf_subsystem_events subsystem event type.
+ */
+typedef void (*spdk_nvmf_subsystem_event_cb)(struct spdk_nvmf_subsystem *subsystem,
+		void *cb_arg,
+		spdk_nvmf_subsystem_events event);
+
+/**
+ * Register callback function to receive subsystem events.
+ *
+ * \param subsystem The NVMe-oF subsystem.
+ * \param cb_fn A function that will be called once the subsystem has changed state.
+ *
+ * \return 0 on success, or negated errno on failure.
+ */
+
+int spdk_nvmf_subsystem_register_for_event(struct spdk_nvmf_subsystem *subsystem,
+						spdk_nvmf_subsystem_event_cb cb);
+
+/**
  * Transition an NVMe-oF subsystem from Inactive to Active state.
  *
  * \param subsystem The NVMe-oF subsystem.
