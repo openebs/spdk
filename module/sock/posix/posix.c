@@ -1046,6 +1046,7 @@ posix_sock_create(const char *ip, int port,
 	char buf[MAX_TMPBUF];
 	char portnum[PORTNUMLEN];
 	char *p;
+	char *loopback_check;
 	struct addrinfo hints, *res, *res0;
 	int fd;
 	int rc;
@@ -1167,7 +1168,16 @@ retry:
 	}
 
 	/* Only enable zero copy for non-loopback and non-ssl sockets. */
-	enable_zcopy_user_opts = opts->zcopy && !sock_is_loopback(fd) && !enable_ssl;
+	enable_zcopy_user_opts = opts->zcopy && !enable_ssl;
+	if (enable_zcopy_user_opts) {
+		/* In certain situations, sock_is_loopback() may take too long, causing freezes,
+		 * which can lead to I/O time outs. */
+		loopback_check = getenv("SOCKET_CREATE_ZERO_COPY_LOOPBACK_CHECK");
+		if (loopback_check != NULL && strcmp(loopback_check, "1") == 0) {
+			/* Only enable zero copy for non-loopback sockets. */
+			enable_zcopy_user_opts = !sock_is_loopback(fd);
+		}
+	}
 
 	sock = posix_sock_alloc(fd, &impl_opts, enable_zcopy_user_opts &&
 				enable_zcopy_impl_opts, !conn_inprogress);
