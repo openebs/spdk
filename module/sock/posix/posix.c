@@ -445,6 +445,23 @@ posix_sock_set_sendbuf(struct spdk_sock *_sock, int sz)
 	return 0;
 }
 
+/*
+ * spdk_net_is_loopback() calls getifaddrs(), which may take too long in certain
+ * situations and cause I/O timeouts. The loopback check is therefore performed
+ * only when SOCKET_CREATE_ZERO_COPY_LOOPBACK_CHECK=1 is set in the environment.
+ */
+static bool
+posix_sock_zcopy_not_loopback(int fd)
+{
+	const char *loopback_check = getenv("SOCKET_CREATE_ZERO_COPY_LOOPBACK_CHECK");
+
+	if (loopback_check != NULL && strcmp(loopback_check, "1") == 0) {
+		return !spdk_net_is_loopback(fd);
+	}
+
+	return true;
+}
+
 static void
 posix_sock_init(struct spdk_posix_sock *sock, bool enable_zero_copy)
 {
@@ -969,7 +986,7 @@ retry:
 	}
 
 	/* Only enable zero copy for non-loopback and non-ssl sockets. */
-	posix_sock_init(sock, opts->zcopy && !spdk_net_is_loopback(fd) && !enable_ssl &&
+	posix_sock_init(sock, opts->zcopy && posix_sock_zcopy_not_loopback(fd) && !enable_ssl &&
 			impl_opts.enable_zerocopy_send_server);
 	return &sock->base;
 }
@@ -2338,7 +2355,7 @@ posix_connect_poller(struct spdk_posix_sock *sock)
 	sock->fd = ctx->fd;
 
 	/* Only enable zero copy for non-loopback and non-ssl sockets. */
-	posix_sock_init(sock, sock->base.opts.zcopy && !spdk_net_is_loopback(sock->fd) && !ctx->ssl &&
+	posix_sock_init(sock, sock->base.opts.zcopy && posix_sock_zcopy_not_loopback(sock->fd) && !ctx->ssl &&
 			sock->base.impl_opts.enable_zerocopy_send_client);
 
 	if (ctx->ssl) {
