@@ -951,6 +951,7 @@ posix_sock_create(const char *ip, int port,
 	struct spdk_sock_impl_opts impl_opts;
 	struct addrinfo *res, *res0;
 	int fd, rc;
+	char *loopback_check;
 	bool enable_zcopy_user_opts = true;
 	bool enable_zcopy_impl_opts = true;
 	SSL_CTX *ctx = 0;
