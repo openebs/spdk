@@ -49,6 +49,8 @@ struct hello_context_t {
 	struct spdk_blob_store *bs;
 	struct spdk_blob *blob;
 	spdk_blob_id blobid;
+	struct spdk_blob *snap_blob[10];
+	spdk_blob_id snap_blobid[10];
 	struct spdk_io_channel *channel;
 	uint8_t *read_buff;
 	uint8_t *write_buff;
@@ -56,6 +58,7 @@ struct hello_context_t {
 	int rc;
 };
 
+static void blob_write(struct hello_context_t *hello_context, uint64_t size, uint64_t offset);
 /*
  * Free up memory that we allocated.
  */
@@ -142,6 +145,36 @@ delete_blob(void *arg1, int bserrno)
 			    delete_complete, hello_context);
 }
 
+static void
+close_snap(void *arg1, int bserrno)
+{
+	struct hello_context_t *hello_context = arg1;
+	int i;
+	struct spdk_blob *blob = NULL;
+
+	SPDK_NOTICELOG("entry\n");
+	if (bserrno) {
+		unload_bs(hello_context, "Error in close completion",
+			  bserrno);
+		return;
+	}
+
+	for(i = 9; i >= 0; i--){
+		if(hello_context->snap_blob[i] != NULL){
+			blob = hello_context->snap_blob[i];
+			hello_context->snap_blob[i] = NULL;
+			break;
+		}
+	}
+
+	SPDK_NOTICELOG("closing snap id 0x%" PRIx64 " at %d\n", hello_context->snap_blobid[i], i);
+	if (i > 0)
+		spdk_blob_close(blob, close_snap, hello_context);
+	else
+		/* Now let's close it and delete the blob in the callback. */
+		spdk_blob_close(blob, delete_blob, hello_context);
+}
+
 /*
  * Callback function for reading a blob.
  */
@@ -169,7 +202,7 @@ read_complete(void *arg1, int bserrno)
 	}
 
 	/* Now let's close it and delete the blob in the callback. */
-	spdk_blob_close(hello_context->blob, delete_blob, hello_context);
+	spdk_blob_close(hello_context->blob, close_snap, hello_context);
 }
 
 /*
@@ -180,7 +213,7 @@ read_blob(struct hello_context_t *hello_context)
 {
 	SPDK_NOTICELOG("entry\n");
 
-	hello_context->read_buff = spdk_malloc(hello_context->io_unit_size,
+	hello_context->read_buff = spdk_malloc(0x100000,
 					       0x1000, NULL, SPDK_ENV_LCORE_ID_ANY,
 					       SPDK_MALLOC_DMA);
 	if (hello_context->read_buff == NULL) {
@@ -196,6 +229,100 @@ read_blob(struct hello_context_t *hello_context)
 }
 
 /*
+ * Callback function for opening a blob.
+ */
+static void
+snap_open_complete(void *cb_arg, struct spdk_blob *blob, int bserrno)
+{
+	struct hello_context_t *hello_context = cb_arg;
+	int i;
+
+	SPDK_NOTICELOG("entry\n");
+	if (bserrno) {
+		unload_bs(hello_context, "Error in open completion",
+			  bserrno);
+		return;
+	}
+
+	for(i = 0; i < 10; i++){
+		if (hello_context->snap_blob[i] == NULL ) {
+			hello_context->snap_blob[i] = blob;
+			break;
+		}
+	}
+	if (i < 9) {
+		blob_write(hello_context, 2048, i * 2048);
+	}
+	else
+		/* Now let's read back what we wrote and make sure it matches. */
+		read_blob(hello_context);
+}
+
+static void
+snapshot_complete(void *arg1, spdk_blob_id blobid, int bserrno)
+{
+	struct hello_context_t *hello_context = arg1;
+	int i;
+
+	SPDK_NOTICELOG("entry\n");
+	if (bserrno) {
+		unload_bs(hello_context, "Error in snapshot completion",
+			  bserrno);
+		return;
+	}
+	for(i = 0; i < 10; i++){
+		if (hello_context->snap_blobid[i] == 0 ){
+			hello_context->snap_blobid[i] = blobid;
+			break;
+		}
+	}
+
+	SPDK_NOTICELOG("snapshot created with id 0x%" PRIx64 "\n", blobid);
+
+		/* We have to open the blob before we can do things like resize. */
+	spdk_bs_open_blob(hello_context->bs, blobid,
+			  snap_open_complete, hello_context);
+
+}
+static void
+hello_snap_get_xattr_value(void *xattr_ctx, const char *name,
+		     const void **value, size_t *value_len)
+{
+	// struct spdk_lvol *lvol = xattr_ctx;
+
+	if (!strcmp("name", name)) {
+		*value = "snap1";
+		*value_len = 64;
+		return;
+	}
+	if (!strcmp("uuid", name)) {
+		*value = "snap-abc";
+		*value_len = 64;
+		return;
+	}
+	*value = NULL;
+	*value_len = 0;
+}
+/*
+ * Function for reading a blob.
+ */
+static void
+create_snapshot(struct hello_context_t *hello_context)
+{
+	SPDK_NOTICELOG("entry\n");
+	char *xattr_names[] = {"name", "uuid"};
+	struct spdk_blob_xattr_opts snapshot_xattrs;
+
+	snapshot_xattrs.count = 2;
+	snapshot_xattrs.names = xattr_names;
+	snapshot_xattrs.ctx = hello_context;
+	snapshot_xattrs.get_value = hello_snap_get_xattr_value;		
+
+	/* Issue the create snapshot. */
+	spdk_bs_create_snapshot(hello_context->bs, hello_context->blobid, &snapshot_xattrs,
+				snapshot_complete, hello_context);
+}
+/*
  * Callback function for writing a blob.
  */
 static void
@@ -209,24 +336,27 @@ write_complete(void *arg1, int bserrno)
 			  bserrno);
 		return;
 	}
+	/* Create snapshot*/
+	create_snapshot(hello_context);
 
-	/* Now let's read back what we wrote and make sure it matches. */
-	read_blob(hello_context);
 }
 
 /*
  * Function for writing to a blob.
  */
 static void
-blob_write(struct hello_context_t *hello_context)
+blob_write(struct hello_context_t *hello_context, uint64_t size, uint64_t offset)
 {
 	SPDK_NOTICELOG("entry\n");
+
+	if (hello_context->write_buff)
+		spdk_free(hello_context->write_buff);
 
 	/*
 	 * Buffers for data transfer need to be allocated via SPDK. We will
 	 * transfer 1 io_unit of 4K aligned data at offset 0 in the blob.
 	 */
-	hello_context->write_buff = spdk_malloc(hello_context->io_unit_size,
+	hello_context->write_buff = spdk_malloc(size * hello_context->io_unit_size,
 						0x1000, NULL, SPDK_ENV_LCORE_ID_ANY,
 						SPDK_MALLOC_DMA);
 	if (hello_context->write_buff == NULL) {
@@ -234,7 +364,7 @@ blob_write(struct hello_context_t *hello_context)
 			  -ENOMEM);
 		return;
 	}
-	memset(hello_context->write_buff, 0x5a, hello_context->io_unit_size);
+	memset(hello_context->write_buff, 0x5a, size * hello_context->io_unit_size);
 
 	/* Now we have to allocate a channel. */
 	hello_context->channel = spdk_bs_alloc_io_channel(hello_context->bs);
@@ -247,7 +377,7 @@ blob_write(struct hello_context_t *hello_context)
 	/* Let's perform the write, 1 io_unit at offset 0. */
 	spdk_blob_io_write(hello_context->blob, hello_context->channel,
 			   hello_context->write_buff,
-			   0, 1, write_complete, hello_context);
+			   offset, size, write_complete, hello_context);
 }
 
 /*
@@ -266,7 +396,7 @@ sync_complete(void *arg1, int bserrno)
 	}
 
 	/* Blob has been created & sized & MD sync'd, let's write to it. */
-	blob_write(hello_context);
+	blob_write(hello_context, 2048, 0);
 }
 
 static void
@@ -325,7 +455,8 @@ open_complete(void *cb_arg, struct spdk_blob *blob, int bserrno)
 	 * there'd usually be many blobs of various sizes. The resize
 	 * unit is a cluster.
 	 */
-	spdk_blob_resize(hello_context->blob, free, resize_complete, hello_context);
+	spdk_blob_sync_md(hello_context->blob, sync_complete, hello_context);
+	// spdk_blob_resize(hello_context->blob, free, resize_complete, hello_context);
 }
 
 /*
@@ -351,6 +482,25 @@ blob_create_complete(void *arg1, spdk_blob_id blobid, int bserrno)
 			  open_complete, hello_context);
 }
 
+static void
+hello_get_xattr_value(void *xattr_ctx, const char *name,
+		     const void **value, size_t *value_len)
+{
+	// struct spdk_lvol *lvol = xattr_ctx;
+
+	if (!strcmp("name", name)) {
+		*value = "lvol1";
+		*value_len = 64;
+		return;
+	}
+	if (!strcmp("uuid", name)) {
+		*value = "xyz";
+		*value_len = sizeof("xyz");
+		return;
+	}
+	*value = NULL;
+	*value_len = 0;
+}
 /*
  * Function for creating a blob.
  */
@@ -358,7 +508,19 @@ static void
 create_blob(struct hello_context_t *hello_context)
 {
 	SPDK_NOTICELOG("entry\n");
-	spdk_bs_create_blob(hello_context->bs, blob_create_complete, hello_context);
+	struct spdk_blob_opts opts;
+	char *xattr_names[] = {"name", "uuid"};
+
+	spdk_blob_opts_init(&opts, sizeof(opts));
+	opts.thin_provision = true;
+	opts.num_clusters = 10;
+	opts.clear_method = BLOB_CLEAR_WITH_UNMAP;
+	opts.xattrs.count = 2;
+	opts.xattrs.names = xattr_names;
+	opts.xattrs.ctx = hello_context;
+	opts.xattrs.get_value = hello_get_xattr_value;	
+	//spdk_bs_create_blob(hello_context->bs, blob_create_complete, hello_context);
+	spdk_bs_create_blob_ext(hello_context->bs, &opts, blob_create_complete, hello_context);
 }
 
 /*
@@ -460,6 +622,7 @@ main(int argc, char **argv)
 	 * specify a name for the app.
 	 */
 	opts.name = "hello_blob";
+	opts.print_level = 4;
 	opts.json_config_file = argv[1];
 
 
