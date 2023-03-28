@@ -494,7 +494,7 @@ typedef void (*spdk_nvmf_subsystem_event_cb)(struct spdk_nvmf_subsystem *subsyst
  */
 
 int spdk_nvmf_subsystem_register_for_event(struct spdk_nvmf_subsystem *subsystem,
-						spdk_nvmf_subsystem_event_cb cb);
+		spdk_nvmf_subsystem_event_cb cb);
 
 /**
  * Transition an NVMe-oF subsystem from Inactive to Active state.

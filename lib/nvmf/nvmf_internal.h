@@ -497,11 +497,12 @@ void nvmf_bdev_ctrlr_zcopy_end(struct spdk_nvmf_request *req, bool commit);
 
 
 static inline void notify_subsystem_events(struct spdk_nvmf_subsystem *subsystem,
-						void *cb_arg,
-						spdk_nvmf_subsystem_events event)
+		void *cb_arg,
+		spdk_nvmf_subsystem_events event)
 {
-	if (subsystem->nvmf_ss_event_cb)
+	if (subsystem->nvmf_ss_event_cb) {
 		subsystem->nvmf_ss_event_cb(subsystem, cb_arg, event);
+	}
 }
 
 #endif /* __NVMF_INTERNAL_H__ */
