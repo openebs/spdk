@@ -1147,6 +1147,26 @@ vbdev_lvol_create_snapshot(struct spdk_lvol *lvol, const char *snapshot_name,
 }
 
 void
+vbdev_lvol_create_snapshot_ext(struct spdk_lvol *lvol, const char *snapshot_name,
+			       struct spdk_xattr_descriptor *xattrs, uint32_t xattrs_count,
+			       spdk_lvol_op_with_handle_complete cb_fn, void *cb_arg)
+{
+	struct spdk_lvol_with_handle_req *req;
+
+	req = calloc(1, sizeof(*req));
+	if (req == NULL) {
+		cb_fn(cb_arg, NULL, -ENOMEM);
+		return;
+	}
+
+	req->cb_fn = cb_fn;
+	req->cb_arg = cb_arg;
+
+	spdk_lvol_create_snapshot_ext(lvol, snapshot_name, xattrs, xattrs_count, _vbdev_lvol_create_cb,
+				      req);
+}
+
+void
 vbdev_lvol_create_clone(struct spdk_lvol *lvol, const char *clone_name,
 			spdk_lvol_op_with_handle_complete cb_fn, void *cb_arg)
 {
