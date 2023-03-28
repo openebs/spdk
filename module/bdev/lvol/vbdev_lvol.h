@@ -27,6 +27,8 @@ struct lvol_bdev {
 	struct lvol_store_bdev	*lvs_bdev;
 };
 
+struct spdk_xattr_descriptor;
+
 int vbdev_lvs_create(const char *base_bdev_name, const char *name, uint32_t cluster_sz,
 		     enum lvs_clear_method clear_method, uint32_t num_md_pages_per_cluster_ratio,
 		     spdk_lvs_op_with_handle_complete cb_fn, void *cb_arg);
@@ -54,6 +56,9 @@ int vbdev_lvol_create_with_uuid(struct spdk_lvol_store *lvs, const char *name, u
 
 void vbdev_lvol_create_snapshot(struct spdk_lvol *lvol, const char *snapshot_name,
 				spdk_lvol_op_with_handle_complete cb_fn, void *cb_arg);
+void vbdev_lvol_create_snapshot_ext(struct spdk_lvol *lvol, const char *snapshot_name,
+				    struct spdk_xattr_descriptor *xattrs, uint32_t xattrs_count,
+				    spdk_lvol_op_with_handle_complete cb_fn, void *cb_arg);
 
 void vbdev_lvol_create_clone(struct spdk_lvol *lvol, const char *clone_name,
 			     spdk_lvol_op_with_handle_complete cb_fn, void *cb_arg);

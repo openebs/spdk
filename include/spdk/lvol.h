@@ -22,6 +22,7 @@ extern "C" {
 struct spdk_bs_dev;
 struct spdk_lvol_store;
 struct spdk_lvol;
+struct spdk_xattr_descriptor;
 
 enum lvol_clear_method {
 	LVOL_CLEAR_WITH_DEFAULT = BLOB_CLEAR_WITH_DEFAULT,
@@ -76,6 +77,12 @@ struct spdk_lvs_opts {
 	const char		*uuid;
 } __attribute__((packed));
 SPDK_STATIC_ASSERT(sizeof(struct spdk_lvs_opts) == 96, "Incorrect size");
+
+struct spdk_xattr_descriptor {
+	char		*name;
+	void		*value;
+	uint16_t	value_len;
+};
 
 /**
  * Initialize an spdk_lvs_opts structure to the defaults.
@@ -228,6 +235,22 @@ int spdk_lvol_create_with_uuid(struct spdk_lvol_store *lvs, const char *name, ui
  */
 void spdk_lvol_create_snapshot(struct spdk_lvol *lvol, const char *snapshot_name,
 			       spdk_lvol_op_with_handle_complete cb_fn, void *cb_arg);
+
+
+/**
+ * Create snapshot of given lvol.
+ *
+ * \param lvol Handle to lvol.
+ * \param snapshot_name Name of created snapshot.
+ * \param xattrs Optional set of attributes for snapshot.
+ * \param xattrs_count Number of attributes for snapshot.
+ * \param cb_fn Completion callback.
+ * \param cb_arg Completion callback custom arguments.
+ */
+void spdk_lvol_create_snapshot_ext(struct spdk_lvol *lvol, const char *snapshot_name,
+				   struct spdk_xattr_descriptor *xattrs, uint32_t xattrs_count,
+				   spdk_lvol_op_with_handle_complete cb_fn, void *cb_arg);
+
 
 /**
  * Create clone of given snapshot.
