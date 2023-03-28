@@ -14,12 +14,25 @@
 /* Default blob channel opts for lvol */
 #define SPDK_LVOL_BLOB_OPTS_CHANNEL_OPS 512
 
+/**
+ * Maximum number of user-defined attributes for volume snapshot
+ * creation operations.
+ */
+#define SPDK_LVOL_MAX_SNAPSHOT_ATTRS 32
+
 #define LVOL_NAME "name"
 
 SPDK_LOG_REGISTER_COMPONENT(lvol)
 
 static TAILQ_HEAD(, spdk_lvol_store) g_lvol_stores = TAILQ_HEAD_INITIALIZER(g_lvol_stores);
 static pthread_mutex_t g_lvol_stores_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+struct xattr_value_ext_arg {
+	struct spdk_blob_xattr_opts snapshot_xattrs;
+	struct spdk_lvol *lvol;
+	struct spdk_xattr_descriptor *user_xattrs;
+	uint32_t user_xattrs_count;
+};
 
 static int
 add_lvs_to_list(struct spdk_lvol_store *lvs)
@@ -985,6 +998,38 @@ lvol_get_xattr_value(void *xattr_ctx, const char *name,
 	*value_len = 0;
 }
 
+static void
+lvol_get_xattr_value_ext(void *xattr_ctx, const char *name,
+			 const void **value, size_t *value_len)
+{
+	struct xattr_value_ext_arg *ext_arg = xattr_ctx;
+	struct spdk_lvol *lvol = ext_arg->lvol;
+	uint32_t i;
+
+	if (!strcmp(LVOL_NAME, name)) {
+		*value = lvol->name;
+		*value_len = SPDK_LVOL_NAME_MAX;
+		return;
+	}
+	if (!strcmp("uuid", name)) {
+		*value = lvol->uuid_str;
+		*value_len = sizeof(lvol->uuid_str);
+		return;
+	}
+
+	/* Find attribute among user-specific ones. */
+	for (i = 0; i < ext_arg->user_xattrs_count; i++) {
+		if (!strcmp(ext_arg->user_xattrs[i].name, name)) {
+			*value = ext_arg->user_xattrs[i].value;
+			*value_len = ext_arg->user_xattrs[i].value_len;
+			return;
+		}
+	}
+
+	*value = NULL;
+	*value_len = 0;
+}
+
 static int
 lvs_verify_lvol_name(struct spdk_lvol_store *lvs, const char *name)
 {
@@ -1098,17 +1143,49 @@ spdk_lvol_create_with_uuid(struct spdk_lvol_store *lvs, const char *name, uint64
 	return 0;
 }
 
-void
-spdk_lvol_create_snapshot(struct spdk_lvol *origlvol, const char *snapshot_name,
-			  spdk_lvol_op_with_handle_complete cb_fn, void *cb_arg)
+
+static void
+create_lvol_snapshot(struct spdk_lvol *origlvol, const char *snapshot_name,
+		     struct spdk_xattr_descriptor *xattrs, uint32_t xattrs_count,
+		     spdk_lvol_op_with_handle_complete cb_fn, void *cb_arg)
 {
 	struct spdk_lvol_store *lvs;
 	struct spdk_lvol *newlvol;
 	struct spdk_blob *origblob;
 	struct spdk_lvol_with_handle_req *req;
-	struct spdk_blob_xattr_opts snapshot_xattrs;
-	char *xattr_names[] = {LVOL_NAME, "uuid"};
+	struct xattr_value_ext_arg xattr_args;
+	char *xattr_names[SPDK_LVOL_MAX_SNAPSHOT_ATTRS + 2]; /* Extra default attributes. */
 	int rc;
+	size_t num_attrs = 2; /* Number of default attributes. */
+
+	if (xattrs_count > SPDK_LVOL_MAX_SNAPSHOT_ATTRS) {
+		SPDK_INFOLOG(lvol, "Number of snapshot sttributes too big: %d.\n", xattrs_count);
+		cb_fn(cb_arg, NULL, -EINVAL);
+		return;
+	}
+
+	if (xattrs_count > 0 && xattrs == NULL) {
+		SPDK_INFOLOG(lvol, "%d snapshot attributes specified but no attributes provided.\n", xattrs_count);
+		cb_fn(cb_arg, NULL, -EINVAL);
+		return;
+	}
+
+	memset(xattr_names, 0, sizeof(xattr_names));
+
+	/* Generic snapshot attributes. */
+	xattr_names[0] = LVOL_NAME;
+	xattr_names[1] = "uuid";
+
+	/* User-defined snapshot attributes. */
+	if (xattrs_count > 0) {
+		uint32_t i;
+
+		for (i = 0; i < xattrs_count; i++) {
+			xattr_names[i + 2] = xattrs[i].name;
+		}
+
+		num_attrs += xattrs_count;
+	}
 
 	if (origlvol == NULL) {
 		SPDK_INFOLOG(lvol, "Lvol not provided.\n");
@@ -1150,16 +1227,40 @@ spdk_lvol_create_snapshot(struct spdk_lvol *origlvol, const char *snapshot_name,
 	TAILQ_INSERT_TAIL(&newlvol->lvol_store->pending_lvols, newlvol, link);
 	spdk_uuid_generate(&newlvol->uuid);
 	spdk_uuid_fmt_lower(newlvol->uuid_str, sizeof(newlvol->uuid_str), &newlvol->uuid);
-	snapshot_xattrs.count = SPDK_COUNTOF(xattr_names);
-	snapshot_xattrs.ctx = newlvol;
-	snapshot_xattrs.names = xattr_names;
-	snapshot_xattrs.get_value = lvol_get_xattr_value;
+
+	/* Setup context for resolving all snapshot attributes. */
+	memset(&xattr_args, 0, sizeof(xattr_args));
+
+	xattr_args.snapshot_xattrs.count = num_attrs;
+	xattr_args.snapshot_xattrs.ctx = &xattr_args;
+	xattr_args.snapshot_xattrs.names = xattr_names;
+	xattr_args.snapshot_xattrs.get_value = lvol_get_xattr_value_ext;
+
+	xattr_args.lvol = newlvol;
+	xattr_args.user_xattrs = xattrs;
+	xattr_args.user_xattrs_count = xattrs_count;
+
 	req->lvol = newlvol;
 	req->cb_fn = cb_fn;
 	req->cb_arg = cb_arg;
 
-	spdk_bs_create_snapshot(lvs->blobstore, spdk_blob_get_id(origblob), &snapshot_xattrs,
+	spdk_bs_create_snapshot(lvs->blobstore, spdk_blob_get_id(origblob), &xattr_args.snapshot_xattrs,
 				lvol_create_cb, req);
+}
+
+void
+spdk_lvol_create_snapshot(struct spdk_lvol *lvol, const char *snapshot_name,
+			  spdk_lvol_op_with_handle_complete cb_fn, void *cb_arg)
+{
+	create_lvol_snapshot(lvol, snapshot_name, NULL, 0, cb_fn, cb_arg);
+}
+
+void
+spdk_lvol_create_snapshot_ext(struct spdk_lvol *lvol, const char *snapshot_name,
+			      struct spdk_xattr_descriptor *xattrs, uint32_t xattrs_count,
+			      spdk_lvol_op_with_handle_complete cb_fn, void *cb_arg)
+{
+	create_lvol_snapshot(lvol, snapshot_name, xattrs, xattrs_count, cb_fn, cb_arg);
 }
 
 void

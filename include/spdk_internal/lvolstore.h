@@ -58,6 +58,8 @@ struct spdk_lvs_destroy_req {
 	struct spdk_lvol_store	*lvs;
 };
 
+struct spdk_xattr_descriptor;
+
 struct spdk_lvol_with_handle_req {
 	spdk_lvol_op_with_handle_complete cb_fn;
 	void				*cb_arg;

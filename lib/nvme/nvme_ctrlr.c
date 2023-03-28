@@ -418,7 +418,7 @@ struct spdk_nvme_io_qpair_connect_ctx *spdk_nvme_ctrlr_connect_io_qpair_async(
 {
 	struct spdk_nvme_io_qpair_connect_ctx *poll_ctx;
 
-	// Check if I/O qpair supports asynchronous qpair connection.
+	/* Check if I/O qpair supports asynchronous qpair connection. */
 	if (!qpair->async) {
 		SPDK_ERRLOG("asynchronous mode is turned of for I/O qpair 0x%p", qpair);
 		return NULL;
@@ -445,14 +445,14 @@ int spdk_nvme_ctrlr_io_qpair_connect_poll_async(
 
 	switch (probe_ctx->state) {
 	case INIT:
-		// Check if I/O qpair supports asynchronous qpair connection.
+		/* Check if I/O qpair supports asynchronous qpair connection. */
 		if (!qpair->async) {
 			SPDK_ERRLOG("asynchronous mode is turned off for I/O qpair 0x%p", qpair);
 			rc = -ENXIO;
 			goto out_error;
 		}
 
-		// Initiate I/O qpair connection.
+		/* Initiate I/O qpair connection. */
 		rc = nvme_transport_ctrlr_connect_qpair(qpair->ctrlr, qpair);
 		if (rc != 0) {
 			goto out_error;
@@ -462,7 +462,7 @@ int spdk_nvme_ctrlr_io_qpair_connect_poll_async(
 	case WAIT_FOR_CONNECT:
 		n = spdk_nvme_qpair_process_completions(qpair, 0);
 
-		// Check for transport errors.
+		/* Check for transport errors. */
 		if (n < 0) {
 			rc = -n;
 			goto out_error;
@@ -487,19 +487,19 @@ int spdk_nvme_ctrlr_io_qpair_connect_poll_async(
 		}
 		break;
 	default:
-		// Should not get here in case of errors as polling should have stopped.
+		/* Should not get here in case of errors as polling should have stopped. */
 		assert(false);
 	}
 
-	// Trigger the next polling round.
+	/* Trigger the next polling round. */
 	return 1;
 
-	// Report polling error and request to stop polling.
+	/* Report polling error and request to stop polling. */
 out_error:
 	free(probe_ctx);
 	return rc;
 
-	// Notify the callback and request to stop polling.
+	/* Notify the callback and request to stop polling. */
 out_notify:
 	if (probe_ctx->cb_fn) {
 		probe_ctx->cb_fn(qpair, probe_ctx->cb_arg);
