@@ -6231,6 +6231,147 @@ void spdk_bs_create_snapshot(struct spdk_blob_store *bs, spdk_blob_id blobid,
 }
 /* END spdk_bs_create_snapshot */
 
+/* START spdk_bs_snapshot_diff */
+
+struct spdk_bs_snap_diff_ctx {
+	struct spdk_blob_store		*bs;
+	spdk_blob_id base_blobid;
+	spdk_blob_id end_blobid;
+	spdk_blob_id cur_blobid;
+	spdk_blob_id next_blobid;
+	struct spdk_snap_diff_list **results;
+	spdk_blob_op_with_id_complete cb_fn;
+	void *cb_arg;
+};
+
+/* build the bitmap of allocated clusters for the snapshot */
+struct spdk_bit_array *
+bs_record_snap_map(struct spdk_blob *blob)
+{
+	uint64_t i;
+	struct spdk_bit_array *snap_map;
+
+	snap_map = spdk_bit_array_create(blob->active.num_clusters);
+
+	if (snap_map == NULL) {
+		SPDK_ERRLOG("Failed to allocate snapmap for blob id  %" PRIu64 "\n", blob->id);
+		return NULL;
+	}
+	for(i = 0; i < blob->active.num_clusters; i++){
+		if(blob->active.clusters[i])
+			spdk_bit_array_set(snap_map, i);
+	}
+
+	return snap_map;
+}
+
+static int
+bs_init_snap_diff_list(struct spdk_snap_diff_list **list)
+{
+	struct spdk_snap_diff_list *snap_diff_list;
+	snap_diff_list = calloc(1, sizeof(struct spdk_snap_diff_list));
+
+	if(snap_diff_list == NULL)
+	{
+		SPDK_DEBUGLOG(blob, "Cannot allocate memory\n");
+		return ENOMEM;
+	}
+	TAILQ_INIT(&snap_diff_list->diffs);
+	*list = snap_diff_list;
+	return 0;
+}
+
+static void bs_snap_diff_close_cpl(void *cb_arg, int bserrno)
+{
+	struct spdk_bs_snap_diff_ctx *ctx = cb_arg;
+	if(bserrno != 0){
+		SPDK_DEBUGLOG(blob, "Failded close the blobid 0x%" PRIx64 "\n",
+					 ctx->cur_blobid);
+		ctx->cb_fn(ctx->cb_arg, ctx->cur_blobid, bserrno);
+		free(ctx);
+		return;
+	}
+	//successfully completed all the snapshot
+	if(ctx->next_blobid == 0 || ctx->base_blobid == ctx->cur_blobid){
+		ctx->cb_fn(ctx->cb_arg, ctx->cur_blobid, 0);
+		free(ctx);
+		return;		
+	}
+	ctx->cur_blobid = ctx->next_blobid;
+	//open the next snapshot
+	spdk_bs_open_blob(ctx->bs, ctx->cur_blobid, bs_snap_diff_open_cpl, ctx);
+}
+
+static void bs_snap_diff_open_cpl(void *cb_arg, struct spdk_blob *blob, int bserrno)
+{
+	struct spdk_bs_snap_diff_ctx *ctx = cb_arg;
+	struct spdk_bit_array *snapmap;
+	if(bserrno != 0){
+		SPDK_DEBUGLOG(blob, "Failded open the blobid 0x%" PRIx64 "\n",
+					 ctx->cur_blobid);
+		ctx->cb_fn(ctx->cb_arg, ctx->cur_blobid, bserrno);
+		free(ctx);
+		return;
+	}
+
+	snapmap = bs_record_snap_map(blob);
+	if(snapmap == NULL){
+		SPDK_DEBUGLOG(blob, "Cannot allocate memory for "
+					"snapmap for blobid  0x%" PRIx64 "\n", ctx->cur_blobid);
+		ctx->cb_fn(ctx->cb_arg, ctx->cur_blobid, ENOMEM);
+		free(ctx);
+		return;
+	}
+	TAILQ_INSERT_TAIL(ctx->results, snapmap, diffs);
+
+	ctx->next_blobid = blob->parent_id;
+	//close the current snapshot
+	spdk_blob_close(blob, bs_snap_diff_close_cpl, ctx);
+}
+
+void spdk_bs_snapshot_diff(struct spdk_blob_store *bs,
+			     spdk_blob_id base_blobid, spdk_blob_id end_blobid,
+				 struct spdk_snap_diff_list **results,
+			     spdk_blob_op_with_id_complete cb_fn, void *cb_arg)
+{
+	int rc;
+	struct spdk_bs_snap_diff_ctx *ctx;
+
+	if (end_blobid < base_blobid){
+		SPDK_DEBUGLOG(blob, "end blobid can't higher than base blobid\n");
+		cb_fn(cb_arg, base_blobid, EINVAL);
+		return;
+	}
+	rc = bs_init_snap_diff_list(results);
+	if(rc < 0){
+		cb_fn(cb_arg, base_blobid, rc);
+		return;
+	}
+
+	ctx = calloc(1, sizeof(struct spdk_bs_snap_diff_ctx));
+
+	if(ctx == NULL)
+	{
+		SPDK_DEBUGLOG(blob, "Cannot allocate memory for snap_diff ctx\n");
+		cb_fn(cb_arg, base_blobid, ENOMEM);
+		return;
+	}
+
+	ctx->bs = bs;
+	ctx->base_blobid = base_blobid;
+	ctx->end_blobid = end_blobid;
+	ctx->cur_blobid = end_blobid;
+	ctx->results = results;
+	ctx->cb_fn = cb_fn;
+	ctx->cb_arg = cb_arg;
+
+	//open end snapshot
+	spdk_bs_open_blob(bs, end_blobid, bs_load_iter, ctx);
+	return;
+}
+
+/* END spdk_bs_snapshot_diff */
+
 /* START spdk_bs_create_clone */
 
 static void

@@ -125,6 +125,17 @@ struct spdk_blob_list {
 	TAILQ_ENTRY(spdk_blob_list) link;
 };
 
+struct spdk_snap_diff {
+	spdk_blob_id 	id;
+	struct spdk_bit_array *snap_map;
+};
+
+struct spdk_snap_diff_list {
+	size_t count;
+	TAILQ_HEAD(, spdk_snap_diff) diffs;
+	TAILQ_ENTRY(spdk_snap_diff) link;
+};
+
 struct spdk_blob {
 	struct spdk_blob_store *bs;
 

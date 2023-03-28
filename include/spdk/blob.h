@@ -88,6 +88,7 @@ struct spdk_blob_store;
 struct spdk_io_channel;
 struct spdk_blob;
 struct spdk_xattr_names;
+struct spdk_snap_diff_list;
 
 /**
  * Blobstore operation completion callback.
@@ -525,6 +526,27 @@ void spdk_bs_create_blob(struct spdk_blob_store *bs,
  */
 void spdk_bs_create_snapshot(struct spdk_blob_store *bs, spdk_blob_id blobid,
 			     const struct spdk_blob_xattr_opts *snapshot_xattrs,
+			     spdk_blob_op_with_id_complete cb_fn, void *cb_arg);
+
+/**
+ * Get the list of snapshots and their allocated blocks between 
+ * two snapshots
+ *
+ * If the source snapshot is not given, difference is given all the 
+ * way till the root
+ *
+ * \param bs blobstore.
+ * \param start_blobid Id of the source snapshots's blobid.
+ * \param end_blobid Id of the source snapshots's blobid.
+ * \param cb_fn Called when the operation is complete.
+ * \param cb_arg Argument passed to function cb_fn.
+ */
+
+
+
+void spdk_bs_snapshot_diff(struct spdk_blob_store *bs,
+			     spdk_blob_id start_blobid, spdk_blob_id end_blobid,
+				 struct spdk_snap_diff_list **results,
 			     spdk_blob_op_with_id_complete cb_fn, void *cb_arg);
 
 /**

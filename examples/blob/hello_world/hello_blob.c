@@ -59,6 +59,8 @@ struct hello_context_t {
 };
 
 static void blob_write(struct hello_context_t *hello_context, uint64_t size, uint64_t offset);
+static void create_blob(struct hello_context_t *hello_context);
+static void hello_start(void *);
 /*
  * Free up memory that we allocated.
  */
@@ -97,6 +99,7 @@ unload_bs(struct hello_context_t *hello_context, char *msg, int bserrno)
 		SPDK_ERRLOG("%s (err %d)\n", msg, bserrno);
 		hello_context->rc = bserrno;
 	}
+	// spdk_app_stop(bserrno);
 	if (hello_context->bs) {
 		if (hello_context->channel) {
 			spdk_bs_free_io_channel(hello_context->channel);
@@ -250,6 +253,7 @@ snap_open_complete(void *cb_arg, struct spdk_blob *blob, int bserrno)
 			break;
 		}
 	}
+	
 	if (i < 9) {
 		blob_write(hello_context, 2048, i * 2048);
 	}
@@ -380,6 +384,51 @@ blob_write(struct hello_context_t *hello_context, uint64_t size, uint64_t offset
 			   offset, size, write_complete, hello_context);
 }
 
+// static void
+// vbdev_lvs_base_bdev_event_cb(enum spdk_bdev_event_type type, struct spdk_bdev *bdev,
+// 			     void *event_ctx)
+// {
+// 	switch (type) {
+// 	case SPDK_BDEV_EVENT_REMOVE:
+// 		//vbdev_lvs_hotremove_cb(bdev);
+// 		break;
+// 	default:
+// 		SPDK_NOTICELOG("Unsupported bdev event: type %d\n", type);
+// 		break;
+// 	}
+// }
+
+static void
+spdk_grow_cb(void *cb_arg, struct spdk_blob_store *bs, int lvolerrno)
+{
+	struct hello_context_t *hello_context = cb_arg;
+	hello_start(hello_context);
+}
+
+/*
+ * Function for writing to a blob.
+ */
+
+// static void
+// blobstore_grow(void *arg1)
+// {
+// 	struct hello_context_t *hello_context = arg1;
+// 	int rc;
+// 	struct spdk_bs_dev *bs_dev;	
+// 	char c;
+// 	struct spdk_bs_opts opts = {};
+
+// 	scanf("Wait for the keyboard input %c", &c);
+// 	// grow the blobstore
+// 	rc = spdk_bdev_create_bs_dev_ext("Malloc0", vbdev_lvs_base_bdev_event_cb,
+// 					 NULL, &bs_dev);
+// 	if(rc < 0){
+// 		SPDK_NOTICELOG("Failed to get create device from name \n");
+// 		exit(1);
+// 	}
+// 	spdk_bs_opts_init(&opts, sizeof(opts));
+// 	spdk_bs_grow(bs_dev, &opts, spdk_grow_cb, hello_context);
+// }
 /*
  * Callback function for syncing metadata.
  */
@@ -394,6 +443,7 @@ sync_complete(void *arg1, int bserrno)
 			  bserrno);
 		return;
 	}
+
 
 	/* Blob has been created & sized & MD sync'd, let's write to it. */
 	blob_write(hello_context, 2048, 0);
@@ -513,7 +563,7 @@ create_blob(struct hello_context_t *hello_context)
 
 	spdk_blob_opts_init(&opts, sizeof(opts));
 	opts.thin_provision = true;
-	opts.num_clusters = 10;
+	opts.num_clusters = 100;
 	opts.clear_method = BLOB_CLEAR_WITH_UNMAP;
 	opts.xattrs.count = 2;
 	opts.xattrs.names = xattr_names;
@@ -561,6 +611,7 @@ base_bdev_event_cb(enum spdk_bdev_event_type type, struct spdk_bdev *bdev,
 		   void *event_ctx)
 {
 	SPDK_WARNLOG("Unsupported bdev event: type %d\n", type);
+	exit(1);
 }
 
 /*
@@ -611,7 +662,8 @@ main(int argc, char **argv)
 	struct hello_context_t *hello_context = NULL;
 
 	SPDK_NOTICELOG("entry\n");
-
+	spdk_log_set_print_level(SPDK_LOG_DEBUG);
+	spdk_log_set_level(SPDK_LOG_DEBUG);
 	/* Set default values in opts structure. */
 	spdk_app_opts_init(&opts, sizeof(opts));
 
