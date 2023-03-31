@@ -41,6 +41,7 @@
 #include "spdk/log.h"
 #include "spdk/string.h"
 
+#define MAX_SNAP 5
 /*
  * We'll use this struct to gather housekeeping hello_context to pass between
  * our events and callbacks.
@@ -49,8 +50,8 @@ struct hello_context_t {
 	struct spdk_blob_store *bs;
 	struct spdk_blob *blob;
 	spdk_blob_id blobid;
-	struct spdk_blob *snap_blob[10];
-	spdk_blob_id snap_blobid[10];
+	struct spdk_blob *snap_blob[MAX_SNAP];
+	spdk_blob_id snap_blobid[MAX_SNAP];
 	struct spdk_io_channel *channel;
 	uint8_t *read_buff;
 	uint8_t *write_buff;
@@ -129,6 +130,26 @@ delete_complete(void *arg1, int bserrno)
 	unload_bs(hello_context, "", 0);
 }
 
+static void
+snap_diff_complete(void *cb_arg, spdk_blob_id blobid, int bserrno)
+{
+	struct hello_context_t *hello_context = cb_arg;
+	SPDK_NOTICELOG("entry\n");
+	spdk_bs_delete_blob(hello_context->bs, hello_context->blobid,
+			    delete_complete, hello_context);}
+
+static void
+snap_diff(void *arg1, int bserrno)
+{
+	struct spdk_snap_diff_list *results;
+	struct hello_context_t *hello_context = arg1;
+	SPDK_NOTICELOG("entry\n");
+	spdk_bs_snapshot_diff(hello_context->bs,
+			     hello_context->snap_blobid[0], hello_context->snap_blobid[MAX_SNAP - 1],
+				 &results,
+			     snap_diff_complete, hello_context);
+
+}
 /*
  * Function for deleting a blob.
  */
@@ -136,7 +157,6 @@ static void
 delete_blob(void *arg1, int bserrno)
 {
 	struct hello_context_t *hello_context = arg1;
-
 	SPDK_NOTICELOG("entry\n");
 	if (bserrno) {
 		unload_bs(hello_context, "Error in close completion",
@@ -162,7 +182,7 @@ close_snap(void *arg1, int bserrno)
 		return;
 	}
 
-	for(i = 9; i >= 0; i--){
+	for(i = MAX_SNAP - 1; i >= 0; i--){
 		if(hello_context->snap_blob[i] != NULL){
 			blob = hello_context->snap_blob[i];
 			hello_context->snap_blob[i] = NULL;
@@ -170,12 +190,15 @@ close_snap(void *arg1, int bserrno)
 		}
 	}
 
-	SPDK_NOTICELOG("closing snap id 0x%" PRIx64 " at %d\n", hello_context->snap_blobid[i], i);
-	if (i > 0)
+	if (i > 0){
+		SPDK_NOTICELOG("closing snap id 0x%" PRIx64 " at %d\n", hello_context->snap_blobid[i], i);
 		spdk_blob_close(blob, close_snap, hello_context);
-	else
+	}
+	else {
+		SPDK_NOTICELOG("closing blob id 0x%" PRIx64 "\n", hello_context->blobid);
 		/* Now let's close it and delete the blob in the callback. */
-		spdk_blob_close(blob, delete_blob, hello_context);
+		spdk_blob_close(blob, snap_diff, hello_context);
+	}
 }
 
 /*
@@ -247,14 +270,14 @@ snap_open_complete(void *cb_arg, struct spdk_blob *blob, int bserrno)
 		return;
 	}
 
-	for(i = 0; i < 10; i++){
+	for(i = 0; i < MAX_SNAP; i++){
 		if (hello_context->snap_blob[i] == NULL ) {
 			hello_context->snap_blob[i] = blob;
 			break;
 		}
 	}
 	
-	if (i < 9) {
+	if (i < MAX_SNAP - 1) {
 		blob_write(hello_context, 2048, i * 2048);
 	}
 	else
@@ -274,7 +297,7 @@ snapshot_complete(void *arg1, spdk_blob_id blobid, int bserrno)
 			  bserrno);
 		return;
 	}
-	for(i = 0; i < 10; i++){
+	for(i = 0; i < MAX_SNAP; i++){
 		if (hello_context->snap_blobid[i] == 0 ){
 			hello_context->snap_blobid[i] = blobid;
 			break;

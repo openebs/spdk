@@ -69,6 +69,9 @@ static int blob_remove_xattr(struct spdk_blob *blob, const char *name, bool inte
 static void blob_write_extent_page(struct spdk_blob *blob, uint32_t extent, uint64_t cluster_num,
 				   struct spdk_blob_md_page *page, spdk_blob_op_complete cb_fn, void *cb_arg);
 
+struct spdk_bit_array *bs_record_snap_map(struct spdk_blob *blob);
+static void bs_snap_diff_open_cpl(void *cb_arg, struct spdk_blob *blob, int bserrno);
+
 static int
 blob_id_cmp(struct spdk_blob *blob1, struct spdk_blob *blob2)
 {
@@ -6239,7 +6242,7 @@ struct spdk_bs_snap_diff_ctx {
 	spdk_blob_id end_blobid;
 	spdk_blob_id cur_blobid;
 	spdk_blob_id next_blobid;
-	struct spdk_snap_diff_list **results;
+	struct spdk_snap_diff_list *results;
 	spdk_blob_op_with_id_complete cb_fn;
 	void *cb_arg;
 };
@@ -6302,10 +6305,13 @@ static void bs_snap_diff_close_cpl(void *cb_arg, int bserrno)
 	spdk_bs_open_blob(ctx->bs, ctx->cur_blobid, bs_snap_diff_open_cpl, ctx);
 }
 
-static void bs_snap_diff_open_cpl(void *cb_arg, struct spdk_blob *blob, int bserrno)
+static void
+bs_snap_diff_open_cpl(void *cb_arg, struct spdk_blob *blob, int bserrno)
 {
 	struct spdk_bs_snap_diff_ctx *ctx = cb_arg;
 	struct spdk_bit_array *snapmap;
+	struct spdk_snap_diff *snap_diff_entry;
+	struct spdk_snap_diff_list *snapmap_list = ctx->results;
 	if(bserrno != 0){
 		SPDK_DEBUGLOG(blob, "Failded open the blobid 0x%" PRIx64 "\n",
 					 ctx->cur_blobid);
@@ -6322,7 +6328,18 @@ static void bs_snap_diff_open_cpl(void *cb_arg, struct spdk_blob *blob, int bser
 		free(ctx);
 		return;
 	}
-	TAILQ_INSERT_TAIL(ctx->results, snapmap, diffs);
+	snap_diff_entry = calloc(1, sizeof(struct spdk_snap_diff));
+	if(snap_diff_entry == NULL){
+		SPDK_DEBUGLOG(blob, "Cannot allocate memory for "
+					"snapmap for blobid  0x%" PRIx64 "\n", ctx->cur_blobid);
+		ctx->cb_fn(ctx->cb_arg, ctx->cur_blobid, ENOMEM);
+		free(ctx);
+		return;
+	}
+	snap_diff_entry->id = blob->id;
+	snap_diff_entry->snap_map = snapmap;
+	snapmap_list->count++;
+	TAILQ_INSERT_HEAD(&snapmap_list->diffs, snap_diff_entry, next);
 
 	ctx->next_blobid = blob->parent_id;
 	//close the current snapshot
@@ -6361,12 +6378,12 @@ void spdk_bs_snapshot_diff(struct spdk_blob_store *bs,
 	ctx->base_blobid = base_blobid;
 	ctx->end_blobid = end_blobid;
 	ctx->cur_blobid = end_blobid;
-	ctx->results = results;
+	ctx->results = *results;
 	ctx->cb_fn = cb_fn;
 	ctx->cb_arg = cb_arg;
 
 	//open end snapshot
-	spdk_bs_open_blob(bs, end_blobid, bs_load_iter, ctx);
+	spdk_bs_open_blob(bs, end_blobid, bs_snap_diff_open_cpl, ctx);
 	return;
 }
 
