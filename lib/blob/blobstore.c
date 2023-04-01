@@ -6242,10 +6242,34 @@ struct spdk_bs_snap_diff_ctx {
 	spdk_blob_id end_blobid;
 	spdk_blob_id cur_blobid;
 	spdk_blob_id next_blobid;
-	struct spdk_snap_diff_list *results;
-	spdk_blob_op_with_id_complete cb_fn;
+	struct spdk_snap_diff_list *lists;
+	spdk_snap_diff_complete cb_fn;
 	void *cb_arg;
 };
+
+
+static int
+bs_init_snap_diff_list(struct spdk_snap_diff_list **list)
+{
+	struct spdk_snap_diff_list *snap_diff_list;
+	snap_diff_list = calloc(1, sizeof(struct spdk_snap_diff_list));
+
+	if(snap_diff_list == NULL)
+	{
+		SPDK_DEBUGLOG(blob, "Cannot allocate memory\n");
+		return ENOMEM;
+	}
+	TAILQ_INIT(&snap_diff_list->diffs);
+	*list = snap_diff_list;
+	return 0;
+}
+
+static void
+bs_free_snap_diff_list(struct spdk_snap_diff_list **list)
+{
+	//TODO
+	return;
+}
 
 /* build the bitmap of allocated clusters for the snapshot */
 struct spdk_bit_array *
@@ -6268,35 +6292,21 @@ bs_record_snap_map(struct spdk_blob *blob)
 	return snap_map;
 }
 
-static int
-bs_init_snap_diff_list(struct spdk_snap_diff_list **list)
-{
-	struct spdk_snap_diff_list *snap_diff_list;
-	snap_diff_list = calloc(1, sizeof(struct spdk_snap_diff_list));
-
-	if(snap_diff_list == NULL)
-	{
-		SPDK_DEBUGLOG(blob, "Cannot allocate memory\n");
-		return ENOMEM;
-	}
-	TAILQ_INIT(&snap_diff_list->diffs);
-	*list = snap_diff_list;
-	return 0;
-}
-
 static void bs_snap_diff_close_cpl(void *cb_arg, int bserrno)
 {
 	struct spdk_bs_snap_diff_ctx *ctx = cb_arg;
 	if(bserrno != 0){
 		SPDK_DEBUGLOG(blob, "Failded close the blobid 0x%" PRIx64 "\n",
 					 ctx->cur_blobid);
-		ctx->cb_fn(ctx->cb_arg, ctx->cur_blobid, bserrno);
+		bs_free_snap_diff_list(&ctx->lists);
+		ctx->cb_fn(ctx->cb_arg, NULL, bserrno);
 		free(ctx);
 		return;
 	}
 	//successfully completed all the snapshot
-	if(ctx->next_blobid == 0 || ctx->base_blobid == ctx->cur_blobid){
-		ctx->cb_fn(ctx->cb_arg, ctx->cur_blobid, 0);
+	if(ctx->next_blobid == 0xffffffffffffffff || 
+		ctx->base_blobid == ctx->next_blobid){
+		ctx->cb_fn(ctx->cb_arg, &ctx->lists, 0);
 		free(ctx);
 		return;		
 	}
@@ -6311,11 +6321,12 @@ bs_snap_diff_open_cpl(void *cb_arg, struct spdk_blob *blob, int bserrno)
 	struct spdk_bs_snap_diff_ctx *ctx = cb_arg;
 	struct spdk_bit_array *snapmap;
 	struct spdk_snap_diff *snap_diff_entry;
-	struct spdk_snap_diff_list *snapmap_list = ctx->results;
+	struct spdk_snap_diff_list *snapmap_list = ctx->lists;
 	if(bserrno != 0){
 		SPDK_DEBUGLOG(blob, "Failded open the blobid 0x%" PRIx64 "\n",
 					 ctx->cur_blobid);
-		ctx->cb_fn(ctx->cb_arg, ctx->cur_blobid, bserrno);
+		bs_free_snap_diff_list(&ctx->lists);
+		ctx->cb_fn(ctx->cb_arg, NULL, bserrno);
 		free(ctx);
 		return;
 	}
@@ -6324,7 +6335,8 @@ bs_snap_diff_open_cpl(void *cb_arg, struct spdk_blob *blob, int bserrno)
 	if(snapmap == NULL){
 		SPDK_DEBUGLOG(blob, "Cannot allocate memory for "
 					"snapmap for blobid  0x%" PRIx64 "\n", ctx->cur_blobid);
-		ctx->cb_fn(ctx->cb_arg, ctx->cur_blobid, ENOMEM);
+		bs_free_snap_diff_list(&ctx->lists);
+		ctx->cb_fn(ctx->cb_arg, NULL, ENOMEM);
 		free(ctx);
 		return;
 	}
@@ -6332,7 +6344,8 @@ bs_snap_diff_open_cpl(void *cb_arg, struct spdk_blob *blob, int bserrno)
 	if(snap_diff_entry == NULL){
 		SPDK_DEBUGLOG(blob, "Cannot allocate memory for "
 					"snapmap for blobid  0x%" PRIx64 "\n", ctx->cur_blobid);
-		ctx->cb_fn(ctx->cb_arg, ctx->cur_blobid, ENOMEM);
+		bs_free_snap_diff_list(&ctx->lists);
+		ctx->cb_fn(ctx->cb_arg, NULL, ENOMEM);
 		free(ctx);
 		return;
 	}
@@ -6348,20 +6361,20 @@ bs_snap_diff_open_cpl(void *cb_arg, struct spdk_blob *blob, int bserrno)
 
 void spdk_bs_snapshot_diff(struct spdk_blob_store *bs,
 			     spdk_blob_id base_blobid, spdk_blob_id end_blobid,
-				 struct spdk_snap_diff_list **results,
-			     spdk_blob_op_with_id_complete cb_fn, void *cb_arg)
+			     spdk_snap_diff_complete cb_fn, void *cb_arg)
 {
 	int rc;
 	struct spdk_bs_snap_diff_ctx *ctx;
+	struct spdk_snap_diff_list *lists;
 
-	if (end_blobid < base_blobid){
-		SPDK_DEBUGLOG(blob, "end blobid can't higher than base blobid\n");
-		cb_fn(cb_arg, base_blobid, EINVAL);
+	if (end_blobid <= base_blobid){
+		SPDK_DEBUGLOG(blob, "base blobid can't higher than end blobid\n");
+		cb_fn(cb_arg, NULL, EINVAL);
 		return;
 	}
-	rc = bs_init_snap_diff_list(results);
+	rc = bs_init_snap_diff_list(&lists);
 	if(rc < 0){
-		cb_fn(cb_arg, base_blobid, rc);
+		cb_fn(cb_arg, NULL, rc);
 		return;
 	}
 
@@ -6370,7 +6383,8 @@ void spdk_bs_snapshot_diff(struct spdk_blob_store *bs,
 	if(ctx == NULL)
 	{
 		SPDK_DEBUGLOG(blob, "Cannot allocate memory for snap_diff ctx\n");
-		cb_fn(cb_arg, base_blobid, ENOMEM);
+		bs_free_snap_diff_list(&ctx->lists);
+		cb_fn(cb_arg, NULL, ENOMEM);
 		return;
 	}
 
@@ -6378,7 +6392,7 @@ void spdk_bs_snapshot_diff(struct spdk_blob_store *bs,
 	ctx->base_blobid = base_blobid;
 	ctx->end_blobid = end_blobid;
 	ctx->cur_blobid = end_blobid;
-	ctx->results = *results;
+	ctx->lists = lists;
 	ctx->cb_fn = cb_fn;
 	ctx->cb_arg = cb_arg;
 

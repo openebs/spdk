@@ -126,6 +126,15 @@ typedef void (*spdk_blob_op_complete)(void *cb_arg, int bserrno);
 typedef void (*spdk_blob_op_with_id_complete)(void *cb_arg, spdk_blob_id blobid, int bserrno);
 
 /**
+ * snapdiff operation completion callback.
+ *
+ * \param cb_arg Callback argument.
+ * \param list List of snapshots and diffs.
+ * \param bserrno 0 if it completed successfully, or negative errno if it failed.
+ */
+typedef void (*spdk_snap_diff_complete)(void *cb_arg, struct spdk_snap_diff_list **list, int bserrno);
+
+/**
  * Blob operation completion callback with handle.
  *
  * \param cb_arg Callback argument.
@@ -546,8 +555,7 @@ void spdk_bs_create_snapshot(struct spdk_blob_store *bs, spdk_blob_id blobid,
 
 void spdk_bs_snapshot_diff(struct spdk_blob_store *bs,
 			     spdk_blob_id start_blobid, spdk_blob_id end_blobid,
-				 struct spdk_snap_diff_list **results,
-			     spdk_blob_op_with_id_complete cb_fn, void *cb_arg);
+			     spdk_snap_diff_complete cb_fn, void *cb_arg);
 
 /**
  * Create a clone of specified read-only blob.

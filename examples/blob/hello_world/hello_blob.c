@@ -131,22 +131,22 @@ delete_complete(void *arg1, int bserrno)
 }
 
 static void
-snap_diff_complete(void *cb_arg, spdk_blob_id blobid, int bserrno)
+snap_diff_complete(void *cb_arg, struct spdk_snap_diff_list **results, int bserrno)
 {
 	struct hello_context_t *hello_context = cb_arg;
+	// struct spdk_snap_diff_list *list = *results;
 	SPDK_NOTICELOG("entry\n");
+	SPDK_NOTICELOG("snapdiff errno %d\n", bserrno);
 	spdk_bs_delete_blob(hello_context->bs, hello_context->blobid,
 			    delete_complete, hello_context);}
 
 static void
 snap_diff(void *arg1, int bserrno)
 {
-	struct spdk_snap_diff_list *results;
 	struct hello_context_t *hello_context = arg1;
 	SPDK_NOTICELOG("entry\n");
 	spdk_bs_snapshot_diff(hello_context->bs,
-			     hello_context->snap_blobid[0], hello_context->snap_blobid[MAX_SNAP - 1],
-				 &results,
+			     hello_context->snap_blobid[0], hello_context->snap_blobid[0],
 			     snap_diff_complete, hello_context);
 
 }
