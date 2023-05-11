@@ -49,6 +49,7 @@
 #define SPDK_LVOL_MAX_SNAPSHOT_ATTRS 32
 
 #define LVOL_NAME "name"
+#define LVOL_UUID "uuid"
 
 SPDK_LOG_REGISTER_COMPONENT(lvol)
 
@@ -224,7 +225,7 @@ load_next_lvol(void *cb_arg, struct spdk_blob *blob, int lvolerrno)
 	lvol->lvol_store = lvs;
 	lvol->thin_provision = spdk_blob_is_thin_provisioned(blob);
 
-	rc = spdk_blob_get_xattr_value(blob, "uuid", (const void **)&attr, &value_len);
+	rc = spdk_blob_get_xattr_value(blob, LVOL_UUID, (const void **)&attr, &value_len);
 	if (rc != 0 || value_len != SPDK_UUID_STRING_LEN || attr[SPDK_UUID_STRING_LEN - 1] != '\0' ||
 	    spdk_uuid_parse(&lvol->uuid, attr) != 0) {
 		SPDK_INFOLOG(lvol, "Missing or corrupt lvol uuid\n");
@@ -312,7 +313,7 @@ lvs_read_uuid(void *cb_arg, struct spdk_blob *blob, int lvolerrno)
 		return;
 	}
 
-	rc = spdk_blob_get_xattr_value(blob, "uuid", (const void **)&attr, &value_len);
+	rc = spdk_blob_get_xattr_value(blob, LVOL_UUID, (const void **)&attr, &value_len);
 	if (rc != 0 || value_len != SPDK_UUID_STRING_LEN || attr[SPDK_UUID_STRING_LEN - 1] != '\0') {
 		SPDK_INFOLOG(lvol, "missing or incorrect UUID\n");
 		req->lvserrno = -EINVAL;
@@ -497,7 +498,7 @@ super_blob_init_cb(void *cb_arg, int lvolerrno)
 
 	spdk_uuid_fmt_lower(uuid, sizeof(uuid), &lvs->uuid);
 
-	spdk_blob_set_xattr(blob, "uuid", uuid, sizeof(uuid));
+	spdk_blob_set_xattr(blob, LVOL_UUID, uuid, sizeof(uuid));
 	spdk_blob_set_xattr(blob, "name", lvs->name, strnlen(lvs->name, SPDK_LVS_NAME_MAX) + 1);
 	spdk_blob_sync_md(blob, super_blob_set_cb, req);
 }
@@ -1011,7 +1012,7 @@ lvol_get_xattr_value(void *xattr_ctx, const char *name,
 		*value_len = SPDK_LVOL_NAME_MAX;
 		return;
 	}
-	if (!strcmp("uuid", name)) {
+	if (!strcmp(LVOL_UUID, name)) {
 		*value = lvol->uuid_str;
 		*value_len = sizeof(lvol->uuid_str);
 		return;
@@ -1033,7 +1034,7 @@ lvol_get_xattr_value_ext(void *xattr_ctx, const char *name,
 		*value_len = SPDK_LVOL_NAME_MAX;
 		return;
 	}
-	if (!strcmp("uuid", name)) {
+	if (!strcmp(LVOL_UUID, name)) {
 		*value = lvol->uuid_str;
 		*value_len = sizeof(lvol->uuid_str);
 		return;
@@ -1105,7 +1106,7 @@ spdk_lvol_create_with_uuid(struct spdk_lvol_store *lvs, const char *name, uint64
 	struct spdk_lvol *lvol;
 	struct spdk_blob_opts opts;
 	uint64_t num_clusters;
-	char *xattr_names[] = {LVOL_NAME, "uuid"};
+	char *xattr_names[] = {LVOL_NAME, LVOL_UUID};
 	int rc;
 
 	if (lvs == NULL) {
@@ -1179,6 +1180,8 @@ create_lvol_snapshot(struct spdk_lvol *origlvol, const char *snapshot_name,
 	char *xattr_names[SPDK_LVOL_MAX_SNAPSHOT_ATTRS + 2]; /* Extra default attributes. */
 	int rc;
 	size_t num_attrs = 2; /* Number of default attributes. */
+	struct spdk_uuid user_uuid;
+	int use_user_uuid = false;
 
 	if (xattrs_count > SPDK_LVOL_MAX_SNAPSHOT_ATTRS) {
 		SPDK_INFOLOG(lvol, "Number of snapshot sttributes too big: %d.\n", xattrs_count);
@@ -1196,7 +1199,7 @@ create_lvol_snapshot(struct spdk_lvol *origlvol, const char *snapshot_name,
 
 	/* Generic snapshot attributes. */
 	xattr_names[0] = LVOL_NAME;
-	xattr_names[1] = "uuid";
+	xattr_names[1] = LVOL_UUID;
 
 	/* User-defined snapshot attributes. */
 	if (xattrs_count > 0) {
@@ -1204,6 +1207,23 @@ create_lvol_snapshot(struct spdk_lvol *origlvol, const char *snapshot_name,
 
 		for (i = 0; i < xattrs_count; i++) {
 			xattr_names[i + 2] = xattrs[i].name;
+
+			/* Make sure attribute has a valid value. */
+			if (xattrs[i].value == NULL) {
+				SPDK_ERRLOG("Lvol snapshot attribute '%s' is NULL\n", xattrs[i].name);
+				cb_fn(cb_arg, NULL, -EINVAL);
+				return;
+			}
+
+			/* Check whether user wants to override snapshot UUID. */
+			if (!strcmp(xattrs[i].name, LVOL_UUID)) {
+				if (spdk_uuid_parse(&user_uuid, xattrs[i].value) != 0) {
+					SPDK_ERRLOG("Malformed lvol snapshot UUID: %s\n", (char *)xattrs[i].value);
+					cb_fn(cb_arg, NULL, -EINVAL);
+					return;
+				}
+				use_user_uuid = true;
+			}
 		}
 
 		num_attrs += xattrs_count;
@@ -1247,7 +1267,13 @@ create_lvol_snapshot(struct spdk_lvol *origlvol, const char *snapshot_name,
 	newlvol->lvol_store = origlvol->lvol_store;
 	snprintf(newlvol->name, sizeof(newlvol->name), "%s", snapshot_name);
 	TAILQ_INSERT_TAIL(&newlvol->lvol_store->pending_lvols, newlvol, link);
-	spdk_uuid_generate(&newlvol->uuid);
+
+	/* Use user-defined snapshot UUID instead of newly generated one. */
+	if (use_user_uuid == true) {
+		spdk_uuid_copy(&newlvol->uuid, &user_uuid);
+	} else {
+		spdk_uuid_generate(&newlvol->uuid);
+	}
 	spdk_uuid_fmt_lower(newlvol->uuid_str, sizeof(newlvol->uuid_str), &newlvol->uuid);
 
 	/* Setup context for resolving all snapshot attributes. */
