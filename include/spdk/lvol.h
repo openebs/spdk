@@ -253,6 +253,21 @@ void spdk_lvol_create_snapshot_ext(struct spdk_lvol *lvol, const char *snapshot_
 void spdk_lvol_create_clone(struct spdk_lvol *lvol, const char *clone_name,
 			    spdk_lvol_op_with_handle_complete cb_fn, void *cb_arg);
 
+
+/**
+ * Create clone of given snapshot with user-defined attributes.
+ *
+ * \param lvol Handle to lvol snapshot.
+ * \param clone_name Name of created clone.
+ * \param xattrs Optional set of attributes for slone.
+ * \param xattrs_count Number of attributes for clone.
+ * \param cb_fn Completion callback.
+ * \param cb_arg Completion callback custom arguments.
+ */
+void spdk_lvol_create_clone_ext(struct spdk_lvol *lvol, const char *clone_name,
+				struct spdk_xattr_descriptor *xattrs, uint32_t xattrs_count,
+				spdk_lvol_op_with_handle_complete cb_fn, void *cb_arg);
+
 /**
  * Rename lvol with new_name.
  *
