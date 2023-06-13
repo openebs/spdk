@@ -65,9 +65,14 @@ void vbdev_lvol_create_snapshot_ext(struct spdk_lvol *lvol, const char *snapshot
 
 void vbdev_lvol_create_clone(struct spdk_lvol *lvol, const char *clone_name,
 			     spdk_lvol_op_with_handle_complete cb_fn, void *cb_arg);
+
 void vbdev_lvol_create_bdev_clone(const char *esnap_uuid,
 				  struct spdk_lvol_store *lvs, const char *clone_name,
 				  spdk_lvol_op_with_handle_complete cb_fn, void *cb_arg);
+
+void vbdev_lvol_create_clone_ext(struct spdk_lvol *lvol, const char *clone_name,
+				 struct spdk_xattr_descriptor *xattrs, uint32_t xattrs_count,
+				 spdk_lvol_op_with_handle_complete cb_fn, void *cb_arg);
 
 /**
  * \brief Change size of lvol
