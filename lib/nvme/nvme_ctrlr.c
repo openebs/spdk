@@ -436,7 +436,8 @@ struct spdk_nvme_io_qpair_connect_ctx *spdk_nvme_ctrlr_connect_io_qpair_async(
 	return poll_ctx;
 }
 
-int spdk_nvme_ctrlr_io_qpair_connect_poll_async(
+int
+spdk_nvme_ctrlr_io_qpair_connect_poll_async(
 	struct spdk_nvme_qpair *qpair,
 	struct spdk_nvme_io_qpair_connect_ctx *probe_ctx)
 {
