@@ -29,7 +29,7 @@ static TAILQ_HEAD(, spdk_lvol_store) g_lvol_stores = TAILQ_HEAD_INITIALIZER(g_lv
 static pthread_mutex_t g_lvol_stores_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 struct xattr_value_ext_arg {
-	struct spdk_blob_xattr_opts snapshot_xattrs;
+	struct spdk_blob_xattr_opts lvol_xattrs;
 	struct spdk_lvol *lvol;
 	struct spdk_xattr_descriptor *user_xattrs;
 	uint32_t user_xattrs_count;
@@ -1144,7 +1144,6 @@ spdk_lvol_create_with_uuid(struct spdk_lvol_store *lvs, const char *name, uint64
 	return 0;
 }
 
-
 static void
 create_lvol_snapshot(struct spdk_lvol *origlvol, const char *snapshot_name,
 		     struct spdk_xattr_descriptor *xattrs, uint32_t xattrs_count,
@@ -1257,10 +1256,10 @@ create_lvol_snapshot(struct spdk_lvol *origlvol, const char *snapshot_name,
 	/* Setup context for resolving all snapshot attributes. */
 	memset(&xattr_args, 0, sizeof(xattr_args));
 
-	xattr_args.snapshot_xattrs.count = num_attrs;
-	xattr_args.snapshot_xattrs.ctx = &xattr_args;
-	xattr_args.snapshot_xattrs.names = xattr_names;
-	xattr_args.snapshot_xattrs.get_value = lvol_get_xattr_value_ext;
+	xattr_args.lvol_xattrs.count = num_attrs;
+	xattr_args.lvol_xattrs.ctx = &xattr_args;
+	xattr_args.lvol_xattrs.names = xattr_names;
+	xattr_args.lvol_xattrs.get_value = lvol_get_xattr_value_ext;
 
 	xattr_args.lvol = newlvol;
 	xattr_args.user_xattrs = xattrs;
@@ -1270,7 +1269,7 @@ create_lvol_snapshot(struct spdk_lvol *origlvol, const char *snapshot_name,
 	req->cb_fn = cb_fn;
 	req->cb_arg = cb_arg;
 
-	spdk_bs_create_snapshot(lvs->blobstore, spdk_blob_get_id(origblob), &xattr_args.snapshot_xattrs,
+	spdk_bs_create_snapshot(lvs->blobstore, spdk_blob_get_id(origblob), &xattr_args.lvol_xattrs,
 				lvol_create_cb, req);
 }
 
@@ -1289,16 +1288,21 @@ spdk_lvol_create_snapshot_ext(struct spdk_lvol *lvol, const char *snapshot_name,
 	create_lvol_snapshot(lvol, snapshot_name, xattrs, xattrs_count, cb_fn, cb_arg);
 }
 
-void
-spdk_lvol_create_clone(struct spdk_lvol *origlvol, const char *clone_name,
-		       spdk_lvol_op_with_handle_complete cb_fn, void *cb_arg)
+static void
+create_lvol_clone(struct spdk_lvol *origlvol, const char *clone_name,
+		  struct spdk_xattr_descriptor *xattrs, uint32_t xattrs_count,
+		  spdk_lvol_op_with_handle_complete cb_fn, void *cb_arg)
 {
 	struct spdk_lvol *newlvol;
 	struct spdk_lvol_with_handle_req *req;
 	struct spdk_lvol_store *lvs;
 	struct spdk_blob *origblob;
-	struct spdk_blob_xattr_opts clone_xattrs;
-	char *xattr_names[] = {LVOL_NAME, "uuid"};
+
+	struct xattr_value_ext_arg xattr_args;
+	char *xattr_names[SPDK_LVOL_MAX_SNAPSHOT_ATTRS + 2]; /* Extra default attributes. */
+	size_t num_attrs = 2; /* Number of default attributes. */
+	struct spdk_uuid user_uuid;
+	int use_user_uuid = false;
 	int rc;
 
 	if (origlvol == NULL) {
@@ -1311,6 +1315,18 @@ spdk_lvol_create_clone(struct spdk_lvol *origlvol, const char *clone_name,
 	lvs = origlvol->lvol_store;
 	if (lvs == NULL) {
 		SPDK_ERRLOG("lvol store does not exist\n");
+		cb_fn(cb_arg, NULL, -EINVAL);
+		return;
+	}
+
+	if (xattrs_count > SPDK_LVOL_MAX_SNAPSHOT_ATTRS) {
+		SPDK_ERRLOG("Number of clone sttributes too big: %d.\n", xattrs_count);
+		cb_fn(cb_arg, NULL, -EINVAL);
+		return;
+	}
+
+	if (xattrs_count > 0 && xattrs == NULL) {
+		SPDK_ERRLOG("%d clone attributes specified but no attributes provided.\n", xattrs_count);
 		cb_fn(cb_arg, NULL, -EINVAL);
 		return;
 	}
@@ -1336,22 +1352,86 @@ spdk_lvol_create_clone(struct spdk_lvol *origlvol, const char *clone_name,
 		return;
 	}
 
+	memset(xattr_names, 0, sizeof(xattr_names));
+
+	/* Generic clone attributes. */
+	xattr_names[0] = LVOL_NAME;
+	xattr_names[1] = LVOL_UUID;
+
+	/* User-defined clone attributes. */
+	if (xattrs_count > 0) {
+		uint32_t i;
+
+		for (i = 0; i < xattrs_count; i++) {
+			xattr_names[i + 2] = xattrs[i].name;
+
+			/* Make sure attribute has a valid value. */
+			if (xattrs[i].value == NULL) {
+				SPDK_ERRLOG("Lvol clone attribute '%s' is NULL\n", xattrs[i].name);
+				cb_fn(cb_arg, NULL, -EINVAL);
+				return;
+			}
+
+			/* Check whether user wants to override clone UUID. */
+			if (!strcmp(xattrs[i].name, LVOL_UUID)) {
+				if (spdk_uuid_parse(&user_uuid, xattrs[i].value) != 0) {
+					SPDK_ERRLOG("Malformed lvol clone UUID: %s\n", (char *)xattrs[i].value);
+					cb_fn(cb_arg, NULL, -EINVAL);
+					return;
+				}
+				use_user_uuid = true;
+			}
+		}
+
+		num_attrs += xattrs_count;
+	}
+
 	newlvol->lvol_store = lvs;
 	snprintf(newlvol->name, sizeof(newlvol->name), "%s", clone_name);
 	TAILQ_INSERT_TAIL(&newlvol->lvol_store->pending_lvols, newlvol, link);
-	spdk_uuid_generate(&newlvol->uuid);
+
+	/* Use user-defined clone UUID instead of newly generated one. */
+	if (use_user_uuid == true) {
+		spdk_uuid_copy(&newlvol->uuid, &user_uuid);
+	} else {
+		spdk_uuid_generate(&newlvol->uuid);
+	}
+
 	spdk_uuid_fmt_lower(newlvol->uuid_str, sizeof(newlvol->uuid_str), &newlvol->uuid);
-	clone_xattrs.count = SPDK_COUNTOF(xattr_names);
-	clone_xattrs.ctx = newlvol;
-	clone_xattrs.names = xattr_names;
-	clone_xattrs.get_value = lvol_get_xattr_value;
+
+	/* Setup context for resolving all clone attributes. */
+	memset(&xattr_args, 0, sizeof(xattr_args));
+
+	xattr_args.lvol_xattrs.count = num_attrs;
+	xattr_args.lvol_xattrs.ctx = &xattr_args;
+	xattr_args.lvol_xattrs.names = xattr_names;
+	xattr_args.lvol_xattrs.get_value = lvol_get_xattr_value_ext;
+
+	xattr_args.lvol = newlvol;
+	xattr_args.user_xattrs = xattrs;
+	xattr_args.user_xattrs_count = xattrs_count;
+
 	req->lvol = newlvol;
 	req->cb_fn = cb_fn;
 	req->cb_arg = cb_arg;
 
-	spdk_bs_create_clone(lvs->blobstore, spdk_blob_get_id(origblob), &clone_xattrs,
-			     lvol_create_cb,
-			     req);
+	spdk_bs_create_clone(lvs->blobstore, spdk_blob_get_id(origblob), &xattr_args.lvol_xattrs,
+			     lvol_create_cb, req);
+}
+
+void
+spdk_lvol_create_clone_ext(struct spdk_lvol *origlvol, const char *clone_name,
+			   struct spdk_xattr_descriptor *xattrs, uint32_t xattrs_count,
+			   spdk_lvol_op_with_handle_complete cb_fn, void *cb_arg)
+{
+	create_lvol_clone(origlvol, clone_name, xattrs, xattrs_count, cb_fn, cb_arg);
+}
+
+void
+spdk_lvol_create_clone(struct spdk_lvol *origlvol, const char *clone_name,
+		       spdk_lvol_op_with_handle_complete cb_fn, void *cb_arg)
+{
+	create_lvol_clone(origlvol, clone_name, NULL, 0, cb_fn, cb_arg);
 }
 
 static void
