@@ -5895,7 +5895,8 @@ spdk_blob_get_next_unallocated_io_unit(struct spdk_blob *blob, uint64_t offset)
 	return blob_find_io_unit(blob, offset, false);
 }
 
-uint64_t spdk_blob_calc_used_clusters(struct spdk_blob *blob)
+uint64_t
+spdk_blob_calc_used_clusters(struct spdk_blob *blob)
 {
 	size_t i;
 	uint64_t num;
