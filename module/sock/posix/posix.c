@@ -1174,7 +1174,8 @@ retry:
 		}
 	}
 
-	sock = posix_sock_alloc(fd, &impl_opts, enable_zcopy_user_opts && enable_zcopy_impl_opts, !conn_inprogress);
+	sock = posix_sock_alloc(fd, &impl_opts, enable_zcopy_user_opts &&
+				enable_zcopy_impl_opts, !conn_inprogress);
 	if (sock == NULL) {
 		SPDK_ERRLOG("sock allocation failed\n");
 		SSL_free(ssl);
@@ -1421,8 +1422,7 @@ _sock_check_zcopy(struct spdk_sock *sock)
 }
 #endif
 
-static int
-posix_sock_connect_poll(struct spdk_posix_sock *sock);
+static int posix_sock_connect_poll(struct spdk_posix_sock *sock);
 
 static int
 _sock_flush(struct spdk_sock *sock)
