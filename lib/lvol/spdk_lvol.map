@@ -13,7 +13,9 @@
 	spdk_lvol_create_snapshot;
 	spdk_lvol_create_snapshot_ext;
 	spdk_lvol_create_clone;
+	spdk_lvol_create_clone_ext;
 	spdk_lvol_create_with_uuid;
+	spdk_lvol_create_snapshot_ext;
 	spdk_lvol_rename;
 	spdk_lvol_deletable;
 	spdk_lvol_destroy;
