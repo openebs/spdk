@@ -500,6 +500,12 @@ uint64_t spdk_blob_get_num_io_units(struct spdk_blob *blob);
 uint64_t spdk_blob_get_num_clusters(struct spdk_blob *blob);
 
 /**
+ * Get the number of clusters allocated by all ancestors of this blob.
+ */
+int spdk_blob_get_num_clusters_ancestors(struct spdk_blob_store *bs, struct spdk_blob *blob,
+		uint64_t *num_clusters);
+
+/**
  * Get next allocated io_unit
  *
  * Starting at 'offset' io_units into the blob, returns the offset of
