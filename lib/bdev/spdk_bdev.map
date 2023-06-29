@@ -60,6 +60,7 @@
 	spdk_bdev_read_blocks_with_md;
 	spdk_bdev_readv;
 	spdk_bdev_readv_blocks;
+	spdk_bdev_readv_blocks_with_flags;
 	spdk_bdev_readv_blocks_with_md;
 	spdk_bdev_write;
 	spdk_bdev_write_blocks;

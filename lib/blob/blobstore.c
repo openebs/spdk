@@ -40,6 +40,7 @@ static int blob_remove_xattr(struct spdk_blob *blob, const char *name, bool inte
 
 static void blob_write_extent_page(struct spdk_blob *blob, uint32_t extent, uint64_t cluster_num,
 				   struct spdk_blob_md_page *page, spdk_blob_op_complete cb_fn, void *cb_arg);
+static struct spdk_blob *blob_lookup(struct spdk_blob_store *bs, spdk_blob_id blobid);
 
 /*
  * External snapshots require a channel per thread per esnap bdev.  The tree
@@ -220,6 +221,30 @@ blob_xattrs_init(struct spdk_blob_xattr_opts *xattrs)
 	xattrs->names = NULL;
 	xattrs->ctx = NULL;
 	xattrs->get_value = NULL;
+}
+
+int
+spdk_blob_get_num_clusters_ancestors(struct spdk_blob_store *bs, struct spdk_blob *blob,
+				     uint64_t *num_clusters)
+{
+	uint64_t clusters = 0;
+	struct spdk_blob *b = blob;
+
+	while (b->parent_id != SPDK_BLOBID_INVALID) {
+		spdk_blob_id blob_id = b->parent_id;
+
+		b = blob_lookup(bs, blob_id);
+
+		if (b == NULL) {
+			SPDK_ERRLOG("Can't lookup parent blob with ID %ld", blob_id);
+			return -ENXIO;
+		}
+
+		clusters += spdk_blob_calc_used_clusters(b);
+	}
+
+	*num_clusters = clusters;
+	return 0;
 }
 
 void
