@@ -46,6 +46,8 @@ static void blob_freeze_io(struct spdk_blob *blob, spdk_blob_op_complete cb_fn, 
 
 static void bs_shallow_copy_cluster_find_next(void *cb_arg);
 
+static struct spdk_blob *blob_lookup(struct spdk_blob_store *bs, spdk_blob_id blobid);
+
 /*
  * External snapshots require a channel per thread per esnap bdev.  The tree
  * is populated lazily as blob IOs are handled by the back_bs_dev. When this
@@ -228,6 +230,30 @@ blob_xattrs_init(struct spdk_blob_xattr_opts *xattrs)
 	xattrs->names = NULL;
 	xattrs->ctx = NULL;
 	xattrs->get_value = NULL;
+}
+
+int
+spdk_blob_get_num_clusters_ancestors(struct spdk_blob_store *bs, struct spdk_blob *blob,
+				     uint64_t *num_clusters)
+{
+	uint64_t clusters = 0;
+	struct spdk_blob *b = blob;
+
+	while (b->parent_id != SPDK_BLOBID_INVALID) {
+		spdk_blob_id blob_id = b->parent_id;
+
+		b = blob_lookup(bs, blob_id);
+
+		if (b == NULL) {
+			SPDK_ERRLOG("Can't lookup parent blob with ID %ld", blob_id);
+			return -ENXIO;
+		}
+
+		clusters += spdk_blob_calc_used_clusters(b);
+	}
+
+	*num_clusters = clusters;
+	return 0;
 }
 
 void
