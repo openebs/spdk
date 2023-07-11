@@ -881,10 +881,11 @@ lvol_read(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_io)
 		lvol_io->ext_io_opts.user_ctx = bdev_io->u.bdev.ext_opts;
 
 		spdk_blob_io_readv_ext(blob, ch, bdev_io->u.bdev.iovs, bdev_io->u.bdev.iovcnt, start_page,
-				       num_pages, lvol_op_comp, bdev_io, &lvol_io->ext_io_opts);
+				       num_pages, bdev_io->u.bdev.ext_io_flags, lvol_op_comp, bdev_io,
+				       &lvol_io->ext_io_opts);
 	} else {
 		spdk_blob_io_readv(blob, ch, bdev_io->u.bdev.iovs, bdev_io->u.bdev.iovcnt, start_page,
-				   num_pages, lvol_op_comp, bdev_io);
+				   num_pages, bdev_io->u.bdev.ext_io_flags, lvol_op_comp, bdev_io);
 	}
 }
 

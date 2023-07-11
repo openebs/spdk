@@ -852,11 +852,12 @@ void spdk_blob_io_writev(struct spdk_blob *blob, struct spdk_io_channel *channel
  * \param iovcnt The number of buffers.
  * \param offset Offset is in io units from the beginning of the blob.
  * \param length Size of data in io units.
+ * \param ext_io_flags Additional I/O flags.
  * \param cb_fn Called when the operation is complete.
  * \param cb_arg Argument passed to function cb_fn.
  */
 void spdk_blob_io_readv(struct spdk_blob *blob, struct spdk_io_channel *channel,
-			struct iovec *iov, int iovcnt, uint64_t offset, uint64_t length,
+			struct iovec *iov, int iovcnt, uint64_t offset, uint64_t length, uint32_t ext_io_flags,
 			spdk_blob_op_complete cb_fn, void *cb_arg);
 
 /**
@@ -888,12 +889,13 @@ void spdk_blob_io_writev_ext(struct spdk_blob *blob, struct spdk_io_channel *cha
  * \param iovcnt The number of buffers.
  * \param offset Offset is in io units from the beginning of the blob.
  * \param length Size of data in io units.
+ * \param ext_io_flags Additional I/O flags.
  * \param cb_fn Called when the operation is complete.
  * \param cb_arg Argument passed to function cb_fn.
  * \param io_opts Optional extended IO request options
  */
 void spdk_blob_io_readv_ext(struct spdk_blob *blob, struct spdk_io_channel *channel,
-			    struct iovec *iov, int iovcnt, uint64_t offset, uint64_t length,
+			    struct iovec *iov, int iovcnt, uint64_t offset, uint64_t length, uint32_t ext_io_flags,
 			    spdk_blob_op_complete cb_fn, void *cb_arg,
 			    struct spdk_blob_ext_io_opts *io_opts);
 

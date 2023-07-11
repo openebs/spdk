@@ -3015,7 +3015,7 @@ rw_iov_split_next(void *cb_arg, int bserrno)
 
 	if (ctx->read) {
 		spdk_blob_io_readv_ext(ctx->blob, ctx->channel, iov, iovcnt, io_unit_offset,
-				       io_units_count, rw_iov_split_next, ctx, ctx->ext_io_opts);
+				       io_units_count, 0, rw_iov_split_next, ctx, ctx->ext_io_opts);
 	} else {
 		spdk_blob_io_writev_ext(ctx->blob, ctx->channel, iov, iovcnt, io_unit_offset,
 					io_units_count, rw_iov_split_next, ctx, ctx->ext_io_opts);
@@ -3025,11 +3025,11 @@ rw_iov_split_next(void *cb_arg, int bserrno)
 static void
 blob_request_submit_rw_iov(struct spdk_blob *blob, struct spdk_io_channel *_channel,
 			   struct iovec *iov, int iovcnt,
-			   uint64_t offset, uint64_t length, spdk_blob_op_complete cb_fn, void *cb_arg, bool read,
+			   uint64_t offset, uint64_t length, uint32_t ext_io_flags,
+			   spdk_blob_op_complete cb_fn, void *cb_arg, bool read,
 			   struct spdk_blob_ext_io_opts *ext_io_opts)
 {
 	struct spdk_bs_cpl cpl;
-	struct spdk_bdev_io *bdev_io = cb_arg;
 
 	assert(blob != NULL);
 
@@ -3094,7 +3094,7 @@ blob_request_submit_rw_iov(struct spdk_blob *blob, struct spdk_io_channel *_chan
 		if (read) {
 			spdk_bs_sequence_t *seq;
 
-			if (bdev_io->u.bdev.ext_io_flags & SPDK_NVME_IO_FLAGS_UNWRITTEN_READ_FAIL) {
+			if (ext_io_flags & SPDK_NVME_IO_FLAGS_UNWRITTEN_READ_FAIL) {
 				if (!is_allocated) {
 					/* ETXTBSY was chosen to indicate read of unwritten block.
 					 * It is not used by SPDK, so it should be fine. */
@@ -3149,7 +3149,7 @@ blob_request_submit_rw_iov(struct spdk_blob *blob, struct spdk_io_channel *_chan
 	} else {
 		struct rw_iov_ctx *ctx;
 
-		assert(!(bdev_io->u.bdev.ext_io_flags & SPDK_NVME_IO_FLAGS_UNWRITTEN_READ_FAIL));
+		assert(ext_io_flags == 0);
 
 		ctx = calloc(1, sizeof(struct rw_iov_ctx) + iovcnt * sizeof(struct iovec));
 		if (ctx == NULL) {
@@ -7845,15 +7845,15 @@ spdk_blob_io_writev(struct spdk_blob *blob, struct spdk_io_channel *channel,
 		    struct iovec *iov, int iovcnt, uint64_t offset, uint64_t length,
 		    spdk_blob_op_complete cb_fn, void *cb_arg)
 {
-	blob_request_submit_rw_iov(blob, channel, iov, iovcnt, offset, length, cb_fn, cb_arg, false, NULL);
+	blob_request_submit_rw_iov(blob, channel, iov, iovcnt, offset, length, 0, cb_fn, cb_arg, false, NULL);
 }
 
 void
 spdk_blob_io_readv(struct spdk_blob *blob, struct spdk_io_channel *channel,
-		   struct iovec *iov, int iovcnt, uint64_t offset, uint64_t length,
+		   struct iovec *iov, int iovcnt, uint64_t offset, uint64_t length, uint32_t ext_io_flags,
 		   spdk_blob_op_complete cb_fn, void *cb_arg)
 {
-	blob_request_submit_rw_iov(blob, channel, iov, iovcnt, offset, length, cb_fn, cb_arg, true, NULL);
+	blob_request_submit_rw_iov(blob, channel, iov, iovcnt, offset, length, ext_io_flags, cb_fn, cb_arg, true, NULL);
 }
 
 void
@@ -7861,16 +7861,16 @@ spdk_blob_io_writev_ext(struct spdk_blob *blob, struct spdk_io_channel *channel,
 			struct iovec *iov, int iovcnt, uint64_t offset, uint64_t length,
 			spdk_blob_op_complete cb_fn, void *cb_arg, struct spdk_blob_ext_io_opts *io_opts)
 {
-	blob_request_submit_rw_iov(blob, channel, iov, iovcnt, offset, length, cb_fn, cb_arg, false,
+	blob_request_submit_rw_iov(blob, channel, iov, iovcnt, offset, length, 0, cb_fn, cb_arg, false,
 				   io_opts);
 }
 
 void
 spdk_blob_io_readv_ext(struct spdk_blob *blob, struct spdk_io_channel *channel,
-		       struct iovec *iov, int iovcnt, uint64_t offset, uint64_t length,
+		       struct iovec *iov, int iovcnt, uint64_t offset, uint64_t length, uint32_t ext_io_flags,
 		       spdk_blob_op_complete cb_fn, void *cb_arg, struct spdk_blob_ext_io_opts *io_opts)
 {
-	blob_request_submit_rw_iov(blob, channel, iov, iovcnt, offset, length, cb_fn, cb_arg, true,
+	blob_request_submit_rw_iov(blob, channel, iov, iovcnt, offset, length, ext_io_flags, cb_fn, cb_arg, true,
 				   io_opts);
 }
 
