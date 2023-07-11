@@ -530,7 +530,7 @@ bs_user_op_execute(spdk_bs_user_op_t *op)
 		break;
 	case SPDK_BLOB_READV:
 		spdk_blob_io_readv_ext(args->blob, ch, args->payload, args->iovcnt,
-				       args->offset, args->length,
+				       args->offset, args->length, 0,
 				       set->cpl.u.blob_basic.cb_fn, set->cpl.u.blob_basic.cb_arg,
 				       set->ext_io_opts);
 		break;
