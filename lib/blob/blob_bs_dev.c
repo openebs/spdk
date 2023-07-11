@@ -82,7 +82,7 @@ blob_bs_dev_readv(struct spdk_bs_dev *dev, struct spdk_io_channel *channel,
 {
 	struct spdk_blob_bs_dev *b = (struct spdk_blob_bs_dev *)dev;
 
-	spdk_blob_io_readv(b->blob, channel, iov, iovcnt, lba, lba_count,
+	spdk_blob_io_readv(b->blob, channel, iov, iovcnt, lba, lba_count, 0,
 			   blob_bs_dev_read_cpl, cb_args);
 }
 
@@ -94,7 +94,7 @@ blob_bs_dev_readv_ext(struct spdk_bs_dev *dev, struct spdk_io_channel *channel,
 {
 	struct spdk_blob_bs_dev *b = (struct spdk_blob_bs_dev *)dev;
 
-	spdk_blob_io_readv_ext(b->blob, channel, iov, iovcnt, lba, lba_count,
+	spdk_blob_io_readv_ext(b->blob, channel, iov, iovcnt, lba, lba_count, 0,
 			       blob_bs_dev_read_cpl, cb_args, ext_opts);
 }
 
