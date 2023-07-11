@@ -131,7 +131,7 @@ blob_bs_dev_readv(struct spdk_bs_dev *dev, struct spdk_io_channel *channel,
 	/* The backing blob may be smaller than this blob, so zero any trailing bytes. */
 	zero_trailing_bytes(b, iov, iovcnt, lba, &lba_count);
 
-	spdk_blob_io_readv(b->blob, channel, iov, iovcnt, lba, lba_count,
+	spdk_blob_io_readv(b->blob, channel, iov, iovcnt, lba, lba_count, 0,
 			   blob_bs_dev_read_cpl, cb_args);
 }
 
@@ -146,7 +146,7 @@ blob_bs_dev_readv_ext(struct spdk_bs_dev *dev, struct spdk_io_channel *channel,
 	/* The backing blob may be smaller than this blob, so zero any trailing bytes. */
 	zero_trailing_bytes(b, iov, iovcnt, lba, &lba_count);
 
-	spdk_blob_io_readv_ext(b->blob, channel, iov, iovcnt, lba, lba_count,
+	spdk_blob_io_readv_ext(b->blob, channel, iov, iovcnt, lba, lba_count, 0,
 			       blob_bs_dev_read_cpl, cb_args, ext_opts);
 }
 
