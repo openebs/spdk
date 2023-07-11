@@ -5589,6 +5589,7 @@ bdev_write_blocks_with_md(struct spdk_bdev_desc *desc, struct spdk_io_channel *c
 	bdev_io->u.bdev.memory_domain_ctx = NULL;
 	bdev_io->u.bdev.accel_sequence = NULL;
 	bdev_io->u.bdev.dif_check_flags = bdev->dif_check_flags;
+	bdev_io->u.bdev.ext_io_flags = 0;
 	bdev_io_init(bdev_io, bdev, cb_arg, cb);
 
 	bdev_io_submit(bdev_io);
@@ -5685,6 +5686,7 @@ bdev_writev_blocks_with_md(struct spdk_bdev_desc *desc, struct spdk_io_channel *
 	bdev_io->u.bdev.dif_check_flags = dif_check_flags;
 	bdev_io->u.bdev.nvme_cdw12.raw = nvme_cdw12_raw;
 	bdev_io->u.bdev.nvme_cdw13.raw = nvme_cdw13_raw;
+	bdev_io->u.bdev.ext_io_flags = 0;
 
 	_bdev_io_submit_ext(desc, bdev_io);
 
@@ -5881,6 +5883,7 @@ bdev_comparev_blocks_with_md(struct spdk_bdev_desc *desc, struct spdk_io_channel
 	bdev_io->u.bdev.memory_domain = NULL;
 	bdev_io->u.bdev.memory_domain_ctx = NULL;
 	bdev_io->u.bdev.accel_sequence = NULL;
+	bdev_io->u.bdev.ext_io_flags = 0;
 
 	if (bdev_io_type_supported(bdev, SPDK_BDEV_IO_TYPE_COMPARE)) {
 		bdev_io_submit(bdev_io);
@@ -5952,6 +5955,7 @@ bdev_compare_blocks_with_md(struct spdk_bdev_desc *desc, struct spdk_io_channel 
 	bdev_io->u.bdev.memory_domain = NULL;
 	bdev_io->u.bdev.memory_domain_ctx = NULL;
 	bdev_io->u.bdev.accel_sequence = NULL;
+	bdev_io->u.bdev.ext_io_flags = 0;
 
 	if (bdev_io_type_supported(bdev, SPDK_BDEV_IO_TYPE_COMPARE)) {
 		bdev_io_submit(bdev_io);
@@ -6140,6 +6144,7 @@ spdk_bdev_comparev_and_writev_blocks(struct spdk_bdev_desc *desc, struct spdk_io
 	bdev_io->u.bdev.memory_domain = NULL;
 	bdev_io->u.bdev.memory_domain_ctx = NULL;
 	bdev_io->u.bdev.accel_sequence = NULL;
+	bdev_io->u.bdev.ext_io_flags = 0;
 
 	if (bdev_io_type_supported(bdev, SPDK_BDEV_IO_TYPE_COMPARE_AND_WRITE)) {
 		bdev_io_submit(bdev_io);
@@ -6193,6 +6198,7 @@ spdk_bdev_zcopy_start(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	bdev_io->u.bdev.memory_domain = NULL;
 	bdev_io->u.bdev.memory_domain_ctx = NULL;
 	bdev_io->u.bdev.accel_sequence = NULL;
+	bdev_io->u.bdev.ext_io_flags = 0;
 
 	bdev_io_submit(bdev_io);
 
@@ -6270,6 +6276,7 @@ spdk_bdev_write_zeroes_blocks(struct spdk_bdev_desc *desc, struct spdk_io_channe
 	bdev_io->u.bdev.memory_domain = NULL;
 	bdev_io->u.bdev.memory_domain_ctx = NULL;
 	bdev_io->u.bdev.accel_sequence = NULL;
+	bdev_io->u.bdev.ext_io_flags = 0;
 
 	/* If the write_zeroes size is large and should be split, use the generic split
 	 * logic regardless of whether SPDK_BDEV_IO_TYPE_WRITE_ZEREOS is supported or not.
@@ -6349,6 +6356,7 @@ spdk_bdev_unmap_blocks(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	bdev_io->u.bdev.memory_domain = NULL;
 	bdev_io->u.bdev.memory_domain_ctx = NULL;
 	bdev_io->u.bdev.accel_sequence = NULL;
+	bdev_io->u.bdev.ext_io_flags = 0;
 
 	if (num_blocks == 0) {
 		spdk_thread_send_msg(spdk_get_thread(), bdev_io_complete_cb, bdev_io);
@@ -10429,6 +10437,8 @@ spdk_bdev_copy_blocks(struct spdk_bdev_desc *desc, struct spdk_io_channel *ch,
 	bdev_io->u.bdev.iovcnt = 0;
 	bdev_io->u.bdev.md_buf = NULL;
 	bdev_io->u.bdev.accel_sequence = NULL;
+	bdev_io->u.bdev.ext_io_flags = 0;
+
 	bdev_io_init(bdev_io, bdev, cb_arg, cb);
 
 	if (dst_offset_blocks == src_offset_blocks || num_blocks == 0) {
