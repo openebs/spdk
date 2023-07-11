@@ -932,7 +932,7 @@ lvol_read(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_io)
 	lvol_io->ext_io_opts.memory_domain_ctx = bdev_io->u.bdev.memory_domain_ctx;
 
 	spdk_blob_io_readv_ext(blob, ch, bdev_io->u.bdev.iovs, bdev_io->u.bdev.iovcnt, start_page,
-			       num_pages, lvol_op_comp, bdev_io, &lvol_io->ext_io_opts);
+			       num_pages, bdev_io->u.bdev.ext_io_flags, lvol_op_comp, bdev_io, &lvol_io->ext_io_opts);
 }
 
 static void
