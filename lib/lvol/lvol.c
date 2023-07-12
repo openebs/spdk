@@ -1213,6 +1213,12 @@ create_lvol_snapshot(struct spdk_lvol *origlvol, const char *snapshot_name,
 	}
 
 	origblob = origlvol->blob;
+	/*
+	 * Reset used clusters cache if blob is thin provisioned and new snapshot
+	 *  is created from it.
+	 */
+	spdk_blob_reset_used_clusters_cache(origblob);
+
 	lvs = origlvol->lvol_store;
 	if (lvs == NULL) {
 		SPDK_ERRLOG("lvol store does not exist\n");
