@@ -108,5 +108,10 @@ void spdk_lvol_set_read_only(struct spdk_lvol *lvol, spdk_lvol_op_complete cb_fn
 			     void *cb_arg);
 int vbdev_lvs_examine(struct spdk_bdev *bdev,
 		      spdk_lvs_op_with_handle_complete cb_fn, void *cb_arg);
-
+/**
+ * Reset num_used_clusters_cache, if blob is thin provisioned and snapshot is
+ * created from it. New snapshot will own the data, hence the clusted information
+ * present in the blob cache can be cleared.
+ */
+void blob_reset_used_clusters_cache(struct spdk_blob *blob);
 #endif /* SPDK_INTERNAL_LVOLSTORE_H */
