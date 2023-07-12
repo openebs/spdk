@@ -485,6 +485,15 @@ uint64_t spdk_blob_get_next_unallocated_io_unit(struct spdk_blob *blob, uint64_t
  */
 uint64_t spdk_blob_calc_used_clusters(struct spdk_blob *blob);
 
+/**
+ * Reset num_used_clusters_cache, if blob is thin provisioned and snapshot is
+ * created from it. New snapshot will own the data, hence the clusted information
+ * present in the blob cache can be cleared.
+ * \param blob Blob struct to query
+ * \return void
+ */
+void spdk_blob_reset_used_clusters_cache(struct spdk_blob *blob);
+
 struct spdk_blob_xattr_opts {
 	/* Number of attributes */
 	size_t	count;
