@@ -907,7 +907,7 @@ lvol_delete_blob_cb(void *cb_arg, int lvolerrno)
 	struct spdk_lvol *lvol = req->lvol;
 
 	if (lvolerrno < 0) {
-		SPDK_ERRLOG("Could not remove blob on lvol gracefully - forced removal\n");
+		SPDK_ERRLOG("%s: Could not remove blob on lvol gracefully - forced removal\n", lvol->name);
 	} else {
 		SPDK_INFOLOG(lvol, "Lvol %s deleted\n", lvol->unique_id);
 	}
