@@ -126,4 +126,11 @@ void spdk_lvs_esnap_missing_remove(struct spdk_lvol *lvol);
 bool spdk_lvs_notify_hotplug(const void *esnap_id, uint32_t id_len,
 			     spdk_lvol_op_with_handle_complete cb_fn, void *cb_arg);
 
+/**
+ * Reset num_used_clusters_cache, if blob is thin provisioned and snapshot is
+ * created from it. New snapshot will own the data, hence the clusted information
+ * present in the blob cache can be cleared.
+ */
+void blob_reset_used_clusters_cache(struct spdk_blob *blob);
+
 #endif /* SPDK_INTERNAL_LVOLSTORE_H */

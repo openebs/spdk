@@ -54,6 +54,12 @@ struct xattr_value_ext_arg {
 	uint32_t user_xattrs_count;
 };
 
+struct spdk_lvol_snapshot_req {
+	spdk_blob_op_with_id_complete orig_cb_fn;
+	void				*orig_cb_arg;
+	struct spdk_lvol	*parent;
+};
+
 static int
 add_lvs_to_list(struct spdk_lvol_store *lvs)
 {
@@ -1164,6 +1170,18 @@ lvol_create_cb(void *cb_arg, spdk_blob_id blobid, int lvolerrno)
 }
 
 static void
+lvol_create_snapshot_cb(void *cb_arg, spdk_blob_id blobid, int lvolerrno)
+{
+	struct spdk_lvol_snapshot_req *snap_req = cb_arg;
+
+	if (lvolerrno == 0) {
+		blob_reset_used_clusters_cache(snap_req->parent->blob);
+	}
+	snap_req->orig_cb_fn(snap_req->orig_cb_arg, blobid, lvolerrno);
+	free(cb_arg);
+}
+
+static void
 lvol_get_xattr_value(void *xattr_ctx, const char *name,
 		     const void **value, size_t *value_len)
 {
@@ -1395,6 +1413,7 @@ create_lvol_snapshot(struct spdk_lvol *origlvol, const char *snapshot_name,
 	struct spdk_lvol *newlvol;
 	struct spdk_blob *origblob;
 	struct spdk_lvol_with_handle_req *req;
+	struct spdk_lvol_snapshot_req *snap_req;
 	struct xattr_value_ext_arg xattr_args;
 	char *xattr_names[SPDK_LVOL_MAX_SNAPSHOT_ATTRS + 2]; /* Extra default attributes. */
 	int rc;
@@ -1467,11 +1486,17 @@ create_lvol_snapshot(struct spdk_lvol *origlvol, const char *snapshot_name,
 		cb_fn(cb_arg, NULL, rc);
 		return;
 	}
-
+	snap_req = calloc(1, sizeof(*snap_req));
+	if (!snap_req) {
+		SPDK_ERRLOG("Cannot alloc memory for snapshot request pointer\n");
+		cb_fn(cb_arg, NULL, -ENOMEM);
+		return;
+	}
 	req = calloc(1, sizeof(*req));
 	if (!req) {
 		SPDK_ERRLOG("Cannot alloc memory for lvol request pointer\n");
 		cb_fn(cb_arg, NULL, -ENOMEM);
+		free(snap_req);
 		return;
 	}
 
@@ -1481,6 +1506,7 @@ create_lvol_snapshot(struct spdk_lvol *origlvol, const char *snapshot_name,
 	if (!newlvol) {
 		SPDK_ERRLOG("Cannot alloc memory for lvol base pointer\n");
 		free(req);
+		free(snap_req);
 		cb_fn(cb_arg, NULL, -ENOMEM);
 		return;
 	}
@@ -1502,8 +1528,12 @@ create_lvol_snapshot(struct spdk_lvol *origlvol, const char *snapshot_name,
 	req->cb_fn = cb_fn;
 	req->cb_arg = cb_arg;
 
+	snap_req->parent = origlvol;
+	snap_req->orig_cb_fn = lvol_create_cb;
+	snap_req->orig_cb_arg = req;
+
 	spdk_bs_create_snapshot(lvs->blobstore, spdk_blob_get_id(origblob), &xattr_args.lvol_xattrs,
-				lvol_create_cb, req);
+				lvol_create_snapshot_cb, snap_req);
 }
 
 void
