@@ -19,6 +19,7 @@
 #include "spdk/bdev_module.h"
 
 #include "spdk_internal/assert.h"
+#include "spdk_internal/lvolstore.h"
 #include "spdk/log.h"
 
 #include "blobstore.h"
@@ -5953,6 +5954,16 @@ spdk_blob_calc_used_clusters(struct spdk_blob *blob)
 	return num;
 }
 
+void
+blob_reset_used_clusters_cache(struct spdk_blob *blob)
+{
+	assert(blob != NULL);
+	if (spdk_blob_is_thin_provisioned(blob)) {
+		spdk_spin_lock(&blob->bs->used_lock);
+		blob->num_used_clusters_cache = 0;
+		spdk_spin_unlock(&blob->bs->used_lock);
+	}
+}
 /* START spdk_bs_create_blob */
 
 static void
