@@ -42,6 +42,7 @@ static int blob_remove_xattr(struct spdk_blob *blob, const char *name, bool inte
 static void blob_write_extent_page(struct spdk_blob *blob, uint32_t extent, uint64_t cluster_num,
 				   struct spdk_blob_md_page *page, spdk_blob_op_complete cb_fn, void *cb_arg);
 static struct spdk_blob *blob_lookup(struct spdk_blob_store *bs, spdk_blob_id blobid);
+static int blob_resize(struct spdk_blob *blob, uint64_t sz);
 
 static int
 blob_id_cmp(struct spdk_blob *blob1, struct spdk_blob *blob2)
@@ -187,6 +188,26 @@ bs_allocate_cluster(struct spdk_blob *blob, uint32_t cluster_num,
 	}
 
 	return 0;
+}
+
+static void
+free_blob_clusters(struct spdk_blob *blob)
+{
+	size_t i;
+
+	if (spdk_blob_is_thin_provisioned(blob) == false) {
+		struct spdk_blob_store *bs = blob->bs;
+
+		spdk_spin_lock(&bs->used_lock);
+		for (i = 0; i < blob->active.cluster_array_size; ++i) {
+			if (blob->active.clusters[i] != 0) {
+				uint32_t cluster_num = bs_lba_to_cluster(bs, blob->active.clusters[i]);
+				bs_release_cluster(bs, cluster_num);
+			}
+		}
+		spdk_spin_unlock(&bs->used_lock);
+	}
+	blob->active.num_clusters = 0;
 }
 
 static void
@@ -5815,6 +5836,14 @@ bs_create_blob_cpl(spdk_bs_sequence_t *seq, void *cb_arg, int bserrno)
 		spdk_spin_unlock(&blob->bs->used_lock);
 	}
 
+	/* Deallocate blob clusters in case blob creation failed.
+	 * Take into account also I/O errors that occurred during previous sequence steps.
+	 */
+	if (bserrno != 0 || seq->bserrno != 0) {
+		SPDK_ERRLOG("Blob #%ld creation failed, freeing blob clusters", blob->id);
+		free_blob_clusters(blob);
+	}
+
 	blob_free(blob);
 
 	bs_sequence_finish(seq, bserrno);
@@ -5889,6 +5918,7 @@ bs_create_blob(struct spdk_blob_store *bs,
 	spdk_bs_sequence_t	*seq;
 	spdk_blob_id		id;
 	int rc;
+	bool blob_resized = false;
 
 	assert(spdk_get_thread() == bs->md_thread);
 
@@ -5948,6 +5978,8 @@ bs_create_blob(struct spdk_blob_store *bs,
 	if (rc < 0) {
 		goto error;
 	}
+	blob_resized = true;
+
 	cpl.type = SPDK_BS_CPL_TYPE_BLOBID;
 	cpl.u.blobid.cb_fn = cb_fn;
 	cpl.u.blobid.cb_arg = cb_arg;
@@ -5964,6 +5996,11 @@ bs_create_blob(struct spdk_blob_store *bs,
 
 error:
 	if (blob != NULL) {
+		/* In case blob has active clusters, deallocate them too. */
+		if (blob_resized == true) {
+			free_blob_clusters(blob);
+		}
+
 		blob_free(blob);
 	}
 	spdk_spin_lock(&bs->used_lock);
