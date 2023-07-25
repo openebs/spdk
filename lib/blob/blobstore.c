@@ -7590,8 +7590,8 @@ spdk_blob_sync_md(struct spdk_blob *blob, spdk_blob_op_complete cb_fn, void *cb_
 
 	SPDK_DEBUGLOG(blob, "Syncing blob 0x%" PRIx64 "\n", blob->id);
 
-	if (blob->md_ro) {
-		assert(blob->state == SPDK_BLOB_STATE_CLEAN);
+	/* If no snapshots attributes are modified and no sync needed, bail out fast. */
+	if (blob->md_ro && blob->state == SPDK_BLOB_STATE_CLEAN) {
 		cb_fn(cb_arg, 0);
 		return;
 	}
@@ -8021,7 +8021,8 @@ blob_set_xattr(struct spdk_blob *blob, const char *name, const void *value,
 
 	blob_verify_md_op(blob);
 
-	if (blob->md_ro) {
+	/* Allow attribute changes on blobs with R/O metadata only for snapshots. */
+	if (blob->md_ro && bs_get_snapshot_entry(blob->bs, blob->id) == NULL) {
 		return -EPERM;
 	}
 
