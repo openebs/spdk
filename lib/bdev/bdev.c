@@ -7496,6 +7496,9 @@ spdk_bdev_io_get_nvme_status(const struct spdk_bdev_io *bdev_io, uint32_t *cdw0,
 	} else if (bdev_io->internal.status == SPDK_BDEV_IO_STATUS_ABORTED) {
 		*sct = SPDK_NVME_SCT_GENERIC;
 		*sc = SPDK_NVME_SC_ABORTED_BY_REQUEST;
+	} else if (bdev_io->internal.status == SPDK_BDEV_IO_STATUS_MISCOMPARE) {
+		*sct = SPDK_NVME_SCT_MEDIA_ERROR;
+		*sc = SPDK_NVME_SC_COMPARE_FAILURE;
 	} else {
 		*sct = SPDK_NVME_SCT_GENERIC;
 		*sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
