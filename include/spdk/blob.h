@@ -1275,6 +1275,12 @@ struct spdk_bs_dev *spdk_blob_get_esnap_bs_dev(const struct spdk_blob *blob);
  */
 bool spdk_blob_is_degraded(const struct spdk_blob *blob);
 
+/**
+ * Reset num_used_clusters_cache, if blob is thin provisioned.
+ * \param blob for which need to reset the usage cache.
+ */
+void spdk_blob_reset_used_clusters_cache(struct spdk_blob *blob);
+
 #ifdef __cplusplus
 }
 #endif

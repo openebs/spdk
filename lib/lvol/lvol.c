@@ -1176,7 +1176,7 @@ lvol_create_snapshot_cb(void *cb_arg, spdk_blob_id blobid, int lvolerrno)
 	struct spdk_lvol_snapshot_req *snap_req = cb_arg;
 
 	if (lvolerrno == 0) {
-		blob_reset_used_clusters_cache(snap_req->parent->blob);
+		spdk_blob_reset_used_clusters_cache(snap_req->parent->blob);
 	}
 	snap_req->orig_cb_fn(snap_req->orig_cb_arg, blobid, lvolerrno);
 	free(cb_arg);
