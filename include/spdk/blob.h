@@ -1054,6 +1054,12 @@ struct spdk_bs_type spdk_bs_get_bstype(struct spdk_blob_store *bs);
  */
 void spdk_bs_set_bstype(struct spdk_blob_store *bs, struct spdk_bs_type bstype);
 
+/**
+ * Reset num_used_clusters_cache, if blob is thin provisioned.
+ * \param blob for which need to reset the usage cache.
+ */
+void spdk_blob_reset_used_clusters_cache(struct spdk_blob *blob);
+
 #ifdef __cplusplus
 }
 #endif
