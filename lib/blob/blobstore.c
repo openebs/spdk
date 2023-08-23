@@ -5976,7 +5976,7 @@ spdk_blob_calc_used_clusters(struct spdk_blob *blob)
 }
 
 void
-blob_reset_used_clusters_cache(struct spdk_blob *blob)
+spdk_blob_reset_used_clusters_cache(struct spdk_blob *blob)
 {
 	assert(blob != NULL);
 	if (spdk_blob_is_thin_provisioned(blob)) {
