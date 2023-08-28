@@ -4403,6 +4403,7 @@ _nvmf_request_complete(void *ctx)
 
 		if (spdk_unlikely(sgroup->state == SPDK_NVMF_SUBSYSTEM_PAUSING &&
 				  sgroup->mgmt_io_outstanding == 0)) {
+			SPDK_ERRLOG("HR: Call Callback Function-1 subsystem_state_change_continue\n");
 			paused = true;
 			for (nsid = 0; nsid < sgroup->num_ns; nsid++) {
 				ns_info = &sgroup->ns_info[nsid];
@@ -4413,8 +4414,8 @@ _nvmf_request_complete(void *ctx)
 					break;
 				}
 			}
-
 			if (paused) {
+				SPDK_ERRLOG("HR: Call Callback Function-2 subsystem_state_change_continue\n");
 				sgroup->state = SPDK_NVMF_SUBSYSTEM_PAUSED;
 				sgroup->cb_fn(sgroup->cb_arg, 0);
 				sgroup->cb_fn = NULL;

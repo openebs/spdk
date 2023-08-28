@@ -600,7 +600,7 @@ subsystem_state_change_done(struct spdk_io_channel_iter *i, int status)
 
 	SPDK_DTRACE_PROBE4(nvmf_subsystem_change_state_done, ctx->subsystem->subnqn,
 			   ctx->requested_state, ctx->original_state, status);
-
+	SPDK_ERRLOG("HR: Change State Done, status: %d, Request_State: %d\n", status, ctx->requested_state);
 	if (status == 0) {
 		status = nvmf_subsystem_set_state(ctx->subsystem, ctx->requested_state);
 		if (status) {
@@ -641,7 +641,7 @@ subsystem_state_change_continue(void *ctx, int status)
 	_ctx = spdk_io_channel_iter_get_ctx(i);
 	SPDK_DTRACE_PROBE3(nvmf_pg_change_state_done, _ctx->subsystem->subnqn,
 			   _ctx->requested_state, spdk_thread_get_id(spdk_get_thread()));
-
+	SPDK_ERRLOG("HR: subsystem_state_change_continue iter: %p\n", i);
 	spdk_for_each_channel_continue(i, status);
 }
 
@@ -655,14 +655,16 @@ subsystem_state_change_on_pg(struct spdk_io_channel_iter *i)
 	ctx = spdk_io_channel_iter_get_ctx(i);
 	ch = spdk_io_channel_iter_get_channel(i);
 	group = spdk_io_channel_get_ctx(ch);
-
 	SPDK_DTRACE_PROBE3(nvmf_pg_change_state, ctx->subsystem->subnqn,
 			   ctx->requested_state, spdk_thread_get_id(spdk_get_thread()));
+	SPDK_ERRLOG("HR: subsystem_state_change_on_pg: %d\n", ctx->requested_state);
 	switch (ctx->requested_state) {
 	case SPDK_NVMF_SUBSYSTEM_INACTIVE:
+		SPDK_ERRLOG("HR: subsystem_state_change_on_pg => INACTIVE");
 		nvmf_poll_group_remove_subsystem(group, ctx->subsystem, subsystem_state_change_continue, i);
 		break;
 	case SPDK_NVMF_SUBSYSTEM_ACTIVE:
+		SPDK_ERRLOG("HR: subsystem_state_change_on_pg => ACTIVE, ctx->subsystem->state: %d", ctx->subsystem->state);
 		if (ctx->subsystem->state == SPDK_NVMF_SUBSYSTEM_ACTIVATING) {
 			nvmf_poll_group_add_subsystem(group, ctx->subsystem, subsystem_state_change_continue, i);
 		} else if (ctx->subsystem->state == SPDK_NVMF_SUBSYSTEM_RESUMING) {
@@ -670,8 +672,10 @@ subsystem_state_change_on_pg(struct spdk_io_channel_iter *i)
 		}
 		break;
 	case SPDK_NVMF_SUBSYSTEM_PAUSED:
+		SPDK_ERRLOG("HR: subsystem_state_change_on_pg => PAUSED");
 		nvmf_poll_group_pause_subsystem(group, ctx->subsystem, ctx->nsid, subsystem_state_change_continue,
 						i);
+		SPDK_ERRLOG("HR: Finish Execution of nvmf_poll_group_pause_subsystem: %p\n", i);
 		break;
 	default:
 		assert(false);

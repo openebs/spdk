@@ -1656,7 +1656,7 @@ nvmf_poll_group_pause_subsystem(struct spdk_nvmf_poll_group *group,
 		goto fini;
 	}
 	sgroup->state = SPDK_NVMF_SUBSYSTEM_PAUSING;
-
+	SPDK_ERRLOG("HR: nvmf_poll_group_pause_subsystem-1: nsid: %u, sgroup->num_ns: %u\n", nsid, sgroup->num_ns);
 	if (nsid == SPDK_NVME_GLOBAL_NS_TAG) {
 		for (i = 0; i < sgroup->num_ns; i++) {
 			ns_info = &sgroup->ns_info[i];
@@ -1669,7 +1669,7 @@ nvmf_poll_group_pause_subsystem(struct spdk_nvmf_poll_group *group,
 			ns_info->state = SPDK_NVMF_SUBSYSTEM_PAUSING;
 		}
 	}
-
+	SPDK_ERRLOG("HR: nvmf_poll_group_pause_subsystem-2: nsid: %u, sgroup->mgmt_io_outstanding: %lu\n", nsid, sgroup->mgmt_io_outstanding);
 	if (sgroup->mgmt_io_outstanding > 0) {
 		assert(sgroup->cb_fn == NULL);
 		sgroup->cb_fn = cb_fn;
@@ -1677,7 +1677,7 @@ nvmf_poll_group_pause_subsystem(struct spdk_nvmf_poll_group *group,
 		sgroup->cb_arg = cb_arg;
 		return;
 	}
-
+	SPDK_ERRLOG("HR: nvmf_poll_group_pause_subsystem-3: nsid: %u, sgroup->num_ns: %u\n", nsid, sgroup->num_ns);
 	if (nsid == SPDK_NVME_GLOBAL_NS_TAG) {
 		for (i = 0; i < sgroup->num_ns; i++) {
 			ns_info = &sgroup->ns_info[i];
@@ -1692,6 +1692,7 @@ nvmf_poll_group_pause_subsystem(struct spdk_nvmf_poll_group *group,
 		}
 	} else {
 		if (ns_info != NULL && ns_info->io_outstanding > 0) {
+			SPDK_ERRLOG("HR: nvmf_poll_group_pause_subsystem-4: ns_info->io_outstanding: %lu\n", ns_info->io_outstanding);
 			assert(sgroup->cb_fn == NULL);
 			sgroup->cb_fn = cb_fn;
 			assert(sgroup->cb_arg == NULL);
@@ -1699,11 +1700,12 @@ nvmf_poll_group_pause_subsystem(struct spdk_nvmf_poll_group *group,
 			return;
 		}
 	}
-
+	SPDK_ERRLOG("HR: nvmf_poll_group_pause_subsystem-5-Finished");
 	assert(sgroup->mgmt_io_outstanding == 0);
 	sgroup->state = SPDK_NVMF_SUBSYSTEM_PAUSED;
 fini:
 	if (cb_fn) {
+		SPDK_ERRLOG("HR: nvmf_poll_group_pause_subsystem-6-Call Callback");
 		cb_fn(cb_arg, rc);
 	}
 }

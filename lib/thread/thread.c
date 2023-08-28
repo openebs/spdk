@@ -816,14 +816,14 @@ msg_queue_run_batch(struct spdk_thread *thread, uint32_t max_msgs)
 	if (count == 0) {
 		return 0;
 	}
-
+	SPDK_ERRLOG("HR: msg_queue_run_batch: count: %d, thread: %p \n", count, thread);
 	for (i = 0; i < count; i++) {
 		struct spdk_msg *msg = messages[i];
 
 		assert(msg != NULL);
 
 		SPDK_DTRACE_PROBE2(msg_exec, msg->fn, msg->arg);
-
+		SPDK_ERRLOG("HR: Call callback Function from threadpool queue");
 		msg->fn(msg->arg);
 
 		SPIN_ASSERT(thread->lock_count == 0, SPIN_ERR_HOLD_DURING_SWITCH);
@@ -1328,7 +1328,7 @@ spdk_thread_send_msg(const struct spdk_thread *thread, spdk_msg_fn fn, void *ctx
 	int rc;
 
 	assert(thread != NULL);
-
+	SPDK_ERRLOG("HR: spdk_thread_send_msg, %p", thread);
 	if (spdk_unlikely(thread->state == SPDK_THREAD_STATE_EXITED)) {
 		SPDK_ERRLOG("Thread %s is marked as exited.\n", thread->name);
 		return -EIO;
@@ -2482,7 +2482,7 @@ static void
 _call_completion(void *ctx)
 {
 	struct spdk_io_channel_iter *i = ctx;
-
+	SPDK_ERRLOG("HR: _call_completion Callback");	
 	if (i->cpl != NULL) {
 		i->cpl(i, i->status);
 	}
@@ -2505,8 +2505,11 @@ _call_channel(void *ctx)
 	pthread_mutex_unlock(&g_devlist_mutex);
 
 	if (ch) {
+		SPDK_ERRLOG("HR: if _call_channel channel: %p\n", i);
 		i->fn(i);
+		SPDK_ERRLOG("HR: if After _call_channel channel: %p\n", i);
 	} else {
+		SPDK_ERRLOG("HR: if _call_channel continue: %p\n", i);
 		spdk_for_each_channel_continue(i, 0);
 	}
 }
@@ -2553,6 +2556,7 @@ spdk_for_each_channel(void *io_device, spdk_channel_msg fn, void *ctx,
 
 	TAILQ_FOREACH(thread, &g_threads, tailq) {
 		ch = thread_get_io_channel(thread, i->dev);
+		SPDK_ERRLOG("HR: spdk_for_each_channel=> thread: %p, channel: %p\n", thread, ch);
 		if (ch != NULL) {
 			ch->dev->for_each_count++;
 			i->cur_thread = thread;
@@ -2566,7 +2570,7 @@ spdk_for_each_channel(void *io_device, spdk_channel_msg fn, void *ctx,
 
 end:
 	pthread_mutex_unlock(&g_devlist_mutex);
-
+	SPDK_ERRLOG("HR: Before Calling Final spdk_thread_send_msg");
 	rc = spdk_thread_send_msg(i->orig_thread, _call_completion, i);
 	assert(rc == 0);
 }
@@ -2602,6 +2606,7 @@ spdk_for_each_channel_continue(struct spdk_io_channel_iter *i, int status)
 	thread = TAILQ_NEXT(i->cur_thread, tailq);
 	while (thread) {
 		ch = thread_get_io_channel(thread, dev);
+		SPDK_ERRLOG("HR: spdk_for_each_channel_continue Channel: %p, thread: %p\n", ch, thread);
 		if (ch != NULL) {
 			i->cur_thread = thread;
 			i->ch = ch;
