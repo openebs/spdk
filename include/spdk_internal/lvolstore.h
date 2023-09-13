@@ -25,6 +25,7 @@ struct spdk_lvs_req {
 	void                    *cb_arg;
 	struct spdk_lvol_store		*lvol_store;
 	int				lvserrno;
+	struct spdk_lvs_with_handle_req *base_req;
 };
 
 struct spdk_lvs_grow_req {
