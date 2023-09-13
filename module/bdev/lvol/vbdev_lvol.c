@@ -1532,6 +1532,11 @@ vbdev_lvs_get_ctx_size(void)
 static void
 _vbdev_lvs_examine_done(struct spdk_lvs_req *req, int lvserrno)
 {
+	if (req->base_req) {
+		req->base_req->cb_fn(req->base_req->cb_arg, req->lvol_store, lvserrno);
+		free(req->base_req);
+		req->base_req = NULL;
+	}
 	req->cb_fn(req->cb_arg, lvserrno);
 }
 
@@ -1766,6 +1771,85 @@ vbdev_lvs_examine_disk(struct spdk_bdev *bdev)
 	req->cb_arg = req;
 
 	_vbdev_lvs_examine(bdev, req, vbdev_lvs_load);
+}
+
+static void
+_bdev_module_action_start(struct spdk_bdev_module *module)
+{
+	spdk_spin_lock(&module->internal.spinlock);
+	module->internal.action_in_progress++;
+	spdk_spin_unlock(&module->internal.spinlock);
+}
+
+static void
+_vbdev_lvs_import_done(void *cb_arg, struct spdk_lvol_store *lvol_store, int lvserrno)
+{
+	struct spdk_lvs_with_handle_req *req = cb_arg;
+	const char *name = req->base_bdev ? req->base_bdev->name : "<unknown ndev>";
+
+	if (lvserrno < 0) {
+		SPDK_INFOLOG(vbdev_lvol, "Cannot import lvol store from %s: %s\n", name, strerror(-lvserrno));
+	} else {
+		assert(lvol_store);
+		SPDK_INFOLOG(vbdev_lvol, "Lvol store %s imported from %s\n", lvol_store->name, name);
+	}
+
+	req->cb_fn(req->cb_arg, lvol_store, lvserrno);
+
+	free(req);
+}
+
+int
+vbdev_lvs_import(struct spdk_bdev *bdev, spdk_lvs_op_with_handle_complete cb_fn, void *cb_arg)
+{
+	struct spdk_lvs_with_handle_req *orig_req;
+	struct spdk_lvs_with_handle_req *import_req;
+	struct spdk_lvs_req *req;
+
+	SPDK_INFOLOG(vbdev_lvol, "Attempting to import lvol store from bdev %s...\n", bdev->name);
+
+	_bdev_module_action_start(&g_lvol_if);
+
+	if (spdk_bdev_get_md_size(bdev) != 0) {
+		SPDK_INFOLOG(vbdev_lvol, "Cannot create bs dev on %s\n which is formatted with metadata",
+			     bdev->name);
+		spdk_bdev_module_examine_done(&g_lvol_if);
+		return -1;
+	}
+
+	orig_req = calloc(1, sizeof(*orig_req));
+	if (orig_req == NULL) {
+		SPDK_ERRLOG("Cannot alloc memory for vbdev lvol store import request pointer\n");
+		spdk_bdev_module_examine_done(&g_lvol_if);
+		return -1;
+	}
+	orig_req->cb_fn = cb_fn;
+	orig_req->cb_arg = cb_arg;
+	orig_req->base_bdev = bdev;
+
+	import_req = calloc(1, sizeof(*import_req));
+	if (import_req == NULL) {
+		SPDK_ERRLOG("Cannot alloc memory for vbdev lvol store import request pointer\n");
+		spdk_bdev_module_examine_done(&g_lvol_if);
+		return -1;
+	}
+	import_req->cb_fn = _vbdev_lvs_import_done;
+	import_req->cb_arg = orig_req;
+
+	req = calloc(1, sizeof(*req));
+	if (req == NULL) {
+		SPDK_ERRLOG("Cannot alloc memory for vbdev lvol store request pointer\n");
+		spdk_bdev_module_examine_done(&g_lvol_if);
+		return -1;
+	}
+
+	req->cb_fn = vbdev_lvs_examine_done;
+	req->cb_arg = req;
+	req->base_req = import_req;
+
+	_vbdev_lvs_examine(bdev, req, vbdev_lvs_load);
+
+	return 0;
 }
 
 struct spdk_lvol *
