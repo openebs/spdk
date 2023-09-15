@@ -363,34 +363,85 @@ _vbdev_lvs_remove_cb(void *cb_arg, int lvserrno)
 	free(req);
 }
 
+enum vbdev_lvs_remove_step {
+	DELETE_LVOLS,     /* Delete all existing lvols. */
+	DELETE_SNAPSHOTS, /* Delete all existing snapshots after removing lvols. */
+	DELETE_LVS,       /* Delete lvs store once all lvols and snapshots are removed. */
+};
+
+struct vbdev_lvs_remove_ctx {
+	struct lvol_store_bdev *lvs_bdev;
+	enum vbdev_lvs_remove_step step;
+	bool skipped_snapshots;
+};
+
 static void
 _vbdev_lvs_remove_lvol_cb(void *cb_arg, int lvolerrno)
 {
-	struct lvol_store_bdev *lvs_bdev = cb_arg;
+	struct vbdev_lvs_remove_ctx *remove_ctx = cb_arg;
+	struct lvol_store_bdev *lvs_bdev = remove_ctx->lvs_bdev;
 	struct spdk_lvol_store *lvs = lvs_bdev->lvs;
 	struct spdk_lvol *lvol;
 
 	if (lvolerrno != 0) {
-		SPDK_DEBUGLOG(vbdev_lvol, "Lvol removed with errno %d\n", lvolerrno);
+		SPDK_ERRLOG("LVS %s: lvol removed with errno %d\n", lvs->name, lvolerrno);
 	}
 
-	if (TAILQ_EMPTY(&lvs->lvols)) {
-		spdk_lvs_destroy(lvs, _vbdev_lvs_remove_cb, lvs_bdev);
-		return;
-	}
+	/* Blobstore removal consists of the following sequential phases:
+	 * 1. Remove regular lvols.
+	 * 2. Remove snapshots.
+	 * 3. Destroy the blobstore once all lvols and snapshots are removed.
+	 */
+	switch (remove_ctx->step) {
+	case DELETE_LVOLS:
+		lvol = TAILQ_FIRST(&lvs->lvols);
+		while (lvol != NULL) {
+			if (spdk_lvol_deletable(lvol)) {
+				_vbdev_lvol_destroy(lvol, _vbdev_lvs_remove_lvol_cb, remove_ctx);
+				return;
+			} else {
+				remove_ctx->skipped_snapshots = true;
+			}
+			lvol = TAILQ_NEXT(lvol, link);
+		}
 
-	lvol = TAILQ_FIRST(&lvs->lvols);
-	while (lvol != NULL) {
-		if (spdk_lvol_deletable(lvol)) {
-			_vbdev_lvol_destroy(lvol, _vbdev_lvs_remove_lvol_cb, lvs_bdev);
+		/* Schedule snapshot removal in case snapshots exist, otherwise proceed with blobstore removal. */
+		if (remove_ctx->skipped_snapshots) {
+			SPDK_INFOLOG(vbdev_lvol, "all lvols deleted, starting snapshot removal\n");
+			remove_ctx->step = DELETE_SNAPSHOTS;
+			_vbdev_lvs_remove_lvol_cb(remove_ctx, 0);
+		} else {
+			SPDK_INFOLOG(vbdev_lvol, "no snapshots exist, proceeding directly to lvs removal\n");
+			remove_ctx->step = DELETE_LVS;
+			_vbdev_lvs_remove_lvol_cb(remove_ctx, 0);
+		}
+		break;
+	case DELETE_SNAPSHOTS:
+		lvol = TAILQ_FIRST(&lvs->lvols);
+		while (lvol != NULL) {
+			SPDK_INFOLOG(vbdev_lvol, "deleting snapshot: %s", lvol->name);
+
+			/* Must have only snapshots remaining in blobstore. */
+			assert(!spdk_lvol_deletable(lvol));
+			_vbdev_lvol_destroy(lvol, _vbdev_lvs_remove_lvol_cb, remove_ctx);
 			return;
 		}
-		lvol = TAILQ_NEXT(lvol, link);
-	}
 
-	/* If no lvol is deletable, that means there is circular dependency. */
-	SPDK_ERRLOG("Lvols left in lvs, but unable to delete.\n");
-	assert(false);
+		/* All snapshots removed, schedule blobstore removal. */
+		remove_ctx->step = DELETE_LVS;
+		_vbdev_lvs_remove_lvol_cb(remove_ctx, 0);
+		break;
+	case DELETE_LVS:
+		SPDK_INFOLOG(vbdev_lvol, "all lvols and snapshots deleted, deleting blobstore\n");
+		if (!TAILQ_EMPTY(&lvs->lvols)) {
+			SPDK_ERRLOG("Lvols left in lvs ('%s'), but unable to delete.\n", lvs->name);
+		}
+
+		/* Free invocation context and destroy blobstore. */
+		free(cb_arg);
+		spdk_lvs_destroy(lvs, _vbdev_lvs_remove_cb, lvs_bdev);
+		break;
+	}
 }
 
 static bool
@@ -463,7 +514,15 @@ _vbdev_lvs_remove(struct spdk_lvol_store *lvs, spdk_lvs_op_complete cb_fn, void 
 		return;
 	}
 	if (destroy) {
-		_vbdev_lvs_remove_lvol_cb(lvs_bdev, 0);
+		struct vbdev_lvs_remove_ctx *remove_ctx;
+
+		remove_ctx = calloc(1, sizeof(*remove_ctx));
+
+		remove_ctx->lvs_bdev = lvs_bdev;
+		remove_ctx->step = DELETE_LVOLS;
+		remove_ctx->skipped_snapshots = false;
+
+		_vbdev_lvs_remove_lvol_cb(remove_ctx, 0);
 		return;
 	}
 	TAILQ_FOREACH_SAFE(lvol, &lvs->lvols, link, tmp) {
