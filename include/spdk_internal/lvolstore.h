@@ -12,7 +12,7 @@
 #include "spdk/uuid.h"
 
 /* Default size of blobstore cluster */
-#define SPDK_LVS_OPTS_CLUSTER_SZ (4 * 1024 * 1024)
+#define SPDK_LVS_OPTS_CLUSTER_SZ (1024 * 1024)
 
 /* UUID + '_' + blobid (20 characters for uint64_t).
  * Null terminator is already included in SPDK_UUID_STRING_LEN. */
