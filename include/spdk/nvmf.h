@@ -462,39 +462,38 @@ typedef void (*spdk_nvmf_subsystem_state_change_done)(struct spdk_nvmf_subsystem
 /**
  * List of subsystem events to be propaged downstream.
  */
-typedef enum spdk_nvmf_subsystem_events_t {
-	/* Reserved */
-	SPDK_NVMF_SS_NONE = 0,
-	/** Initator connect event */
-	SPDK_NVMF_SS_INIATOR_CONNECT,
-	/** Initator disconnect event */
-	SPDK_NVMF_SS_INIATOR_DISCONNECT,
-	/** Initator timeout event */
-	SPDK_NVMF_SS_INIATOR_TIMEOUT
-} spdk_nvmf_subsystem_events;
+enum spdk_nvmf_subsystem_event {
+	/** Host connected. Context is a `spdk_nvmf_ctrlr` pointer. */
+	SPDK_NVMF_SUBSYSTEM_EVENT_HOST_CONNECT,
+	/** Host disconnected. Context is a `spdk_nvmf_ctrlr` pointer. */
+	SPDK_NVMF_SUBSYSTEM_EVENT_HOST_DISCONNECT,
+	/** Host keep alive timed out. Context is a `spdk_nvmf_ctrlr` pointer. */
+	SPDK_NVMF_SUBSYSTEM_EVENT_HOST_KEEP_ALIVE_TIMEOUT
+};
 
 /**
- * Function to be called on subsystem events.
+ * Function to be called on a subsystem event.
  *
  * \param subsystem NVMe-oF subsystem that has events to report.
+ * \param event Subsystem event type.
+ * \param ctx Subsystem event context, depends on event type.
  * \param cb_arg Argument passed by callback function.
- * \param spdk_nvmf_subsystem_events subsystem event type.
  */
 typedef void (*spdk_nvmf_subsystem_event_cb)(struct spdk_nvmf_subsystem *subsystem,
-		void *cb_arg,
-		spdk_nvmf_subsystem_events event);
+		enum spdk_nvmf_subsystem_event event,
+		void *ctx,
+		void *cb_arg);
 
 /**
  * Register callback function to receive subsystem events.
  *
  * \param subsystem The NVMe-oF subsystem.
  * \param cb_fn A function that will be called once the subsystem has changed state.
- *
- * \return 0 on success, or negated errno on failure.
+ * \param cb_arg Argument passed to cb_fn.
  */
-
-int spdk_nvmf_subsystem_register_for_event(struct spdk_nvmf_subsystem *subsystem,
-		spdk_nvmf_subsystem_event_cb cb);
+void spdk_nvmf_subsystem_set_event_cb(struct spdk_nvmf_subsystem *subsystem,
+				      spdk_nvmf_subsystem_event_cb cb_fn,
+				      void *cb_arg);
 
 /**
  * Transition an NVMe-oF subsystem from Inactive to Active state.
