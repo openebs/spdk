@@ -318,7 +318,10 @@ struct spdk_nvmf_subsystem {
 	 * It will be enough for ANA group to use the same size as namespaces.
 	 */
 	uint32_t					*ana_group;
-	spdk_nvmf_subsystem_event_cb nvmf_ss_event_cb;
+
+	/* Subsystem event callback and its argument. */
+	spdk_nvmf_subsystem_event_cb			event_cb_fn;
+	void						*event_cb_arg;
 };
 
 static int
@@ -493,16 +496,5 @@ int nvmf_bdev_ctrlr_zcopy_start(struct spdk_bdev *bdev,
  * \param commit Flag indicating whether the buffers should be committed
  */
 void nvmf_bdev_ctrlr_zcopy_end(struct spdk_nvmf_request *req, bool commit);
-
-
-static inline void
-notify_subsystem_events(struct spdk_nvmf_subsystem *subsystem,
-			void *cb_arg,
-			spdk_nvmf_subsystem_events event)
-{
-	if (subsystem->nvmf_ss_event_cb) {
-		subsystem->nvmf_ss_event_cb(subsystem, cb_arg, event);
-	}
-}
 
 #endif /* __NVMF_INTERNAL_H__ */
