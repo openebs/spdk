@@ -57,6 +57,16 @@ static void _nvmf_request_complete(void *ctx);
 int nvmf_passthru_admin_cmd_for_ctrlr(struct spdk_nvmf_request *req, struct spdk_nvmf_ctrlr *ctrlr);
 
 static inline void
+nvmf_subsystem_dispatch_event(struct spdk_nvmf_subsystem *subsystem,
+			      enum spdk_nvmf_subsystem_event event,
+			      void *ctx)
+{
+	if (subsystem->event_cb_fn) {
+		subsystem->event_cb_fn(subsystem, event, ctx, subsystem->event_cb_arg);
+	}
+}
+
+static inline void
 nvmf_invalid_connect_response(struct spdk_nvmf_fabric_connect_rsp *rsp,
 			      uint8_t iattr, uint16_t ipo)
 {
@@ -190,7 +200,8 @@ nvmf_ctrlr_keep_alive_poll(void *ctx)
 					      nvmf_ctrlr_disconnect_qpairs_on_pg,
 					      ctrlr,
 					      nvmf_ctrlr_disconnect_qpairs_done);
-			notify_subsystem_events(ctrlr->subsys, ctrlr, SPDK_NVMF_SS_INIATOR_TIMEOUT);
+			nvmf_subsystem_dispatch_event(ctrlr->subsys,
+						      SPDK_NVMF_SUBSYSTEM_EVENT_HOST_KEEP_ALIVE_TIMEOUT, ctrlr);
 			return SPDK_POLLER_BUSY;
 		}
 	}
@@ -930,8 +941,7 @@ _nvmf_ctrlr_connect(struct spdk_nvmf_request *req)
 			rsp->status.sc = SPDK_NVME_SC_INTERNAL_DEVICE_ERROR;
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 		} else {
-			notify_subsystem_events(subsystem, ctrlr, SPDK_NVMF_SS_INIATOR_CONNECT);
-
+			nvmf_subsystem_dispatch_event(subsystem, SPDK_NVMF_SUBSYSTEM_EVENT_HOST_CONNECT, ctrlr);
 			return SPDK_NVMF_REQUEST_EXEC_STATUS_ASYNCHRONOUS;
 		}
 	} else {
@@ -1263,7 +1273,7 @@ nvmf_prop_set_cc(struct spdk_nvmf_ctrlr *ctrlr, uint32_t value)
 					      nvmf_ctrlr_disconnect_io_qpairs_on_pg,
 					      ctrlr,
 					      nvmf_ctrlr_cc_reset_shn_done);
-			notify_subsystem_events(ctrlr->subsys, ctrlr, SPDK_NVMF_SS_INIATOR_DISCONNECT);
+			nvmf_subsystem_dispatch_event(ctrlr->subsys, SPDK_NVMF_SUBSYSTEM_EVENT_HOST_DISCONNECT, ctrlr);
 		}
 		diff.bits.en = 0;
 	}
@@ -1295,7 +1305,7 @@ nvmf_prop_set_cc(struct spdk_nvmf_ctrlr *ctrlr, uint32_t value)
 			/* From the time a shutdown is initiated the controller shall disable
 			 * Keep Alive timer */
 			nvmf_ctrlr_stop_keep_alive_timer(ctrlr);
-			notify_subsystem_events(ctrlr->subsys, ctrlr, SPDK_NVMF_SS_INIATOR_DISCONNECT);
+			nvmf_subsystem_dispatch_event(ctrlr->subsys, SPDK_NVMF_SUBSYSTEM_EVENT_HOST_DISCONNECT, ctrlr);
 		} else if (cc.bits.shn == 0) {
 			ctrlr->vcprop.cc.bits.shn = 0;
 		} else {
