@@ -349,6 +349,9 @@ struct spdk_nvmf_subsystem {
 	uint32_t					auth_seqnum;
 	/* Subsystem event callback */
 	spdk_nvmf_subsystem_event_cb nvmf_ss_event_cb;
+	/* Subsystem event callback and its argument. */
+	spdk_nvmf_subsystem_event_cb			event_cb_fn;
+	void						*event_cb_arg;
 };
 
 static int
@@ -597,15 +600,5 @@ int nvmf_publish_mdns_prr(struct spdk_nvmf_tgt *tgt);
  * \param tgt The NVMe-oF target
  */
 void nvmf_tgt_stop_mdns_prr(struct spdk_nvmf_tgt *tgt);
-
-static inline void
-notify_subsystem_events(struct spdk_nvmf_subsystem *subsystem,
-			void *cb_arg,
-			spdk_nvmf_subsystem_events event)
-{
-	if (subsystem->nvmf_ss_event_cb) {
-		subsystem->nvmf_ss_event_cb(subsystem, cb_arg, event);
-	}
-}
 
 #endif /* __NVMF_INTERNAL_H__ */
