@@ -267,6 +267,9 @@ struct spdk_nvmf_ctrlr {
 	/* LBA Format Extension Enabled (LBAFEE) */
 	bool				lbafee_enabled;
 
+	spdk_nvmf_ctrlr_cpl_error_cb_fn	*cpl_error_cb_fn;
+	void				*cpl_error_cb_arg;
+
 	TAILQ_ENTRY(spdk_nvmf_ctrlr)	link;
 };
 
