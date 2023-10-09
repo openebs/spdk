@@ -665,6 +665,26 @@ int spdk_nvmf_ctrlr_async_event_error_event(struct spdk_nvmf_ctrlr *ctrlr,
  */
 void spdk_nvmf_ctrlr_abort_aer(struct spdk_nvmf_ctrlr *ctrlr);
 
+/**
+ * Function to be called on a completion error before sending the response to the host.
+ *
+ * \param req NVMe-oF request.
+ * \param cb_arg Argument passed by callback function.
+ */
+typedef void (spdk_nvmf_ctrlr_cpl_error_cb_fn)(struct spdk_nvmf_request *req,
+					       void *cb_arg);
+
+/**
+ * Register callback function to receive subsystem events.
+ *
+ * \param ctrlr The NVMe-oF controller.
+ * \param cb_fn A function that will be called on completion error.
+ * \param cb_arg Argument passed to cb_fn.
+ */
+void spdk_nvmf_ctrlr_set_cpl_error_cb(struct spdk_nvmf_ctrlr *ctrlr,
+				      spdk_nvmf_ctrlr_cpl_error_cb_fn cb_fn,
+				      void *cb_arg);
+
 /*
  * Macro used to register new transports.
  */
