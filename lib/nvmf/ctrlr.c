@@ -2006,7 +2006,7 @@ nvmf_ctrlr_set_features_number_of_queues(struct spdk_nvmf_request *req)
 	return SPDK_NVMF_REQUEST_EXEC_STATUS_COMPLETE;
 }
 
-SPDK_STATIC_ASSERT(sizeof(struct spdk_nvmf_ctrlr) == 4920,
+SPDK_STATIC_ASSERT(sizeof(struct spdk_nvmf_ctrlr) == 4936,
 		   "Please check migration fields that need to be added or not");
 
 static void
@@ -3957,6 +3957,15 @@ spdk_nvmf_ctrlr_abort_aer(struct spdk_nvmf_ctrlr *ctrlr)
 	ctrlr->nr_aer_reqs = 0;
 }
 
+void
+spdk_nvmf_ctrlr_set_cpl_error_cb(struct spdk_nvmf_ctrlr *ctrlr,
+				 spdk_nvmf_ctrlr_cpl_error_cb_fn cb_fn,
+				 void *cb_arg)
+{
+	ctrlr->cpl_error_cb_fn = cb_fn;
+	ctrlr->cpl_error_cb_arg = cb_arg;
+}
+
 static void
 _nvmf_ctrlr_add_reservation_log(void *ctx)
 {
@@ -4431,15 +4440,22 @@ _nvmf_request_complete(void *ctx)
 			qpair->group->stat.completed_nvme_io++;
 		}
 
-		/*
-		 * Set the crd value.
-		 * If the the IO has any error, and dnr (DoNotRetry) is not 1,
-		 * and ACRE is enabled, we will set the crd to 1 to select the first CRDT.
-		 */
-		if (spdk_unlikely(spdk_nvme_cpl_is_error(rsp) &&
-				  rsp->status.dnr == 0 &&
-				  qpair->ctrlr->acre_enabled)) {
-			rsp->status.crd = 1;
+		if (spdk_unlikely(spdk_nvme_cpl_is_error(rsp))) {
+			/*
+			 * Set the crd value.
+			 * If the the IO has any error, and dnr (DoNotRetry) is not 1,
+			 * and ACRE is enabled, we will set the crd to 1 to select the first CRDT.
+			 */
+
+			if (rsp->status.dnr == 0 &&
+			    qpair->ctrlr->acre_enabled) {
+				rsp->status.crd = 1;
+			}
+
+			/* Call completion error callback. */
+			if (qpair->ctrlr->cpl_error_cb_fn) {
+				qpair->ctrlr->cpl_error_cb_fn(req, qpair->ctrlr->cpl_error_cb_arg);
+			}
 		}
 	} else if (spdk_unlikely(nvmf_request_is_fabric_connect(req))) {
 		sgroup = nvmf_subsystem_pg_from_connect_cmd(req);

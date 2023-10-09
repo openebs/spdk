@@ -244,6 +244,9 @@ struct spdk_nvmf_ctrlr {
 	bool				acre_enabled;
 	bool				dynamic_ctrlr;
 
+	spdk_nvmf_ctrlr_cpl_error_cb_fn	*cpl_error_cb_fn;
+	void				*cpl_error_cb_arg;
+
 	TAILQ_ENTRY(spdk_nvmf_ctrlr)	link;
 };
 
