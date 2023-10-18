@@ -357,6 +357,7 @@ blob_alloc(struct spdk_blob_store *bs, spdk_blob_id id)
 	blob->extent_table_found = false;
 	blob->active.num_pages = 1;
 	blob->active.pages = calloc(1, sizeof(*blob->active.pages));
+	blob->reserve_cluster_count = 0;
 	if (!blob->active.pages) {
 		free(blob);
 		return NULL;
@@ -368,7 +369,7 @@ blob_alloc(struct spdk_blob_store *bs, spdk_blob_id id)
 	TAILQ_INIT(&blob->xattrs_internal);
 	TAILQ_INIT(&blob->pending_persists);
 	TAILQ_INIT(&blob->persists_to_complete);
-
+	TAILQ_INIT(&blob->reserve_clusters);
 	return blob;
 }
 
@@ -386,12 +387,24 @@ xattrs_free(struct spdk_xattr_tailq *xattrs)
 }
 
 static void
+free_reserved_clusters(struct spdk_blob *blob)
+{
+	struct spdk_blob_reserve_cluster	*curr_cluster, *tmp;
+
+	TAILQ_FOREACH_SAFE(curr_cluster, &blob->reserve_clusters, link, tmp) {
+		TAILQ_REMOVE(&blob->reserve_clusters, curr_cluster, link);
+	}
+	blob->reserve_cluster_count = 0;
+}
+
+static void
 blob_free(struct spdk_blob *blob)
 {
 	assert(blob != NULL);
 	assert(TAILQ_EMPTY(&blob->pending_persists));
 	assert(TAILQ_EMPTY(&blob->persists_to_complete));
 
+	free_reserved_clusters(blob);
 	free(blob->active.extent_pages);
 	free(blob->clean.extent_pages);
 	free(blob->active.clusters);
@@ -653,6 +666,35 @@ blob_deserialize_xattr(struct spdk_blob *blob,
 	return 0;
 }
 
+static int
+blob_deserialize_reserve_clusters(struct spdk_blob *blob,
+		       struct spdk_blob_md_descriptor_xattr *desc_xattr)
+{
+	struct spdk_blob_reserve_cluster                       *cluster;
+
+	if (desc_xattr->length != sizeof(desc_xattr->name_length) +
+	    sizeof(desc_xattr->value_length) +
+	    desc_xattr->name_length + desc_xattr->value_length) {
+		return -EINVAL;
+	}
+
+	cluster = calloc(1, sizeof(*cluster));
+	if (cluster == NULL) {
+		return -ENOMEM;
+	}
+
+	struct spdk_blob_reserve_cluster *ctx;
+	ctx = calloc(1, sizeof(*ctx));
+	if (ctx == NULL) {
+		// free(name);
+		return -ENOMEM;
+	}
+	ctx->cluster_id = atoi(desc_xattr->name);
+	
+	TAILQ_INSERT_TAIL(&blob->reserve_clusters, ctx, link);
+
+	return 0;
+}
 
 static int
 blob_parse_page(const struct spdk_blob_md_page *page, struct spdk_blob *blob)
@@ -701,6 +743,7 @@ blob_parse_page(const struct spdk_blob_md_page *page, struct spdk_blob *blob)
 			blob->invalid_flags = desc_flags->invalid_flags;
 			blob->data_ro_flags = desc_flags->data_ro_flags;
 			blob->md_ro_flags = desc_flags->md_ro_flags;
+			blob->reserve_cluster_count = desc_flags->reserve_cluster_count;
 
 		} else if (desc->type == SPDK_MD_DESCRIPTOR_TYPE_EXTENT_RLE) {
 			struct spdk_blob_md_descriptor_extent_rle	*desc_extent_rle;
@@ -890,6 +933,14 @@ blob_parse_page(const struct spdk_blob_md_page *page, struct spdk_blob *blob)
 			if (rc != 0) {
 				return rc;
 			}
+		} else if (desc->type == SPDK_MD_DESCRIPTOR_TYPE_RESERVE_CLUSTER) {
+			int rc;
+
+			rc = blob_deserialize_reserve_clusters(blob,
+						    (struct spdk_blob_md_descriptor_xattr *) desc);
+			if (rc != 0) {
+				return rc;
+			}
 		} else {
 			/* Unrecognized descriptor type.  Do not fail - just continue to the
 			 *  next descriptor.  If this descriptor is associated with some feature
@@ -906,7 +957,14 @@ blob_parse_page(const struct spdk_blob_md_page *page, struct spdk_blob *blob)
 		}
 		desc = (struct spdk_blob_md_descriptor *)((uintptr_t)page->descriptors + cur_desc);
 	}
+	if (blob->reserve_cluster_count > 0) {
+		SPDK_ERRLOG("Reserve Cluster Recover: (%u)", blob->reserve_cluster_count);
+		struct spdk_blob_reserve_cluster	*curr_cluster, *temp;
 
+		TAILQ_FOREACH_SAFE(curr_cluster, &blob->reserve_clusters, link, temp) {
+			SPDK_ERRLOG("Recover Reserve Cluster id: (%u)", curr_cluster->cluster_id);
+		}
+	}
 	return 0;
 }
 
@@ -1280,6 +1338,7 @@ blob_serialize_flags(const struct spdk_blob *blob,
 	desc->invalid_flags = blob->invalid_flags;
 	desc->data_ro_flags = blob->data_ro_flags;
 	desc->md_ro_flags = blob->md_ro_flags;
+	desc->reserve_cluster_count = blob->reserve_cluster_count;
 
 	*buf_sz -= sizeof(*desc);
 }
@@ -1337,6 +1396,85 @@ blob_serialize_xattrs(const struct spdk_blob *blob,
 }
 
 static int
+blob_serialize_reserve_cluster(const struct spdk_blob_reserve_cluster *cluster,
+		     uint8_t *buf, size_t buf_sz,
+		     size_t *required_sz)
+{
+	struct spdk_blob_md_descriptor_xattr	*desc;
+	uint32_t cluster_id_size = sizeof(cluster->cluster_id);
+	char buff[cluster_id_size];
+
+	*required_sz = sizeof(struct spdk_blob_md_descriptor_xattr) +
+		       cluster_id_size;
+
+	if (buf_sz < *required_sz) {
+		return -1;
+	}
+
+	desc = (struct spdk_blob_md_descriptor_xattr *)buf;
+
+	desc->type = SPDK_MD_DESCRIPTOR_TYPE_RESERVE_CLUSTER;
+	desc->length = sizeof(desc->name_length) +
+		       sizeof(desc->value_length) +
+		       cluster_id_size;
+	
+	desc->name_length = cluster_id_size;
+	desc->value_length = 0;
+	sprintf(buff, "%u", cluster->cluster_id);
+	memcpy(desc->name, buff, desc->name_length);
+	SPDK_ERRLOG("Serialized reserve clusterid: (%s) to disk", desc->name);
+	return 0;
+}
+
+static int
+blob_serialize_reserve_clusters(const struct spdk_blob *blob,
+		      struct spdk_blob_md_page **pages,
+		      struct spdk_blob_md_page *cur_page,
+		      uint32_t *page_count, uint8_t **buf,
+		      size_t *remaining_sz)
+{
+	int	rc = 0;
+	struct spdk_blob_reserve_cluster	*curr_cluster, *tmp;
+	TAILQ_FOREACH_SAFE(curr_cluster, &blob->reserve_clusters, link, tmp) {
+		size_t required_sz = 0;
+
+		rc = blob_serialize_reserve_cluster(curr_cluster,
+					  *buf, *remaining_sz,
+					  &required_sz);
+		if (rc < 0) {
+			/* Need to add a new page to the chain */
+			rc = blob_serialize_add_page(blob, pages, page_count,
+						     &cur_page);
+			if (rc < 0) {
+				spdk_free(*pages);
+				*pages = NULL;
+				*page_count = 0;
+				return rc;
+			}
+
+			*buf = (uint8_t *)cur_page->descriptors;
+			*remaining_sz = sizeof(cur_page->descriptors);
+
+			/* Try again */
+			required_sz = 0;
+			rc = blob_serialize_reserve_cluster(curr_cluster,
+						  *buf, *remaining_sz,
+						  &required_sz);
+
+			if (rc < 0) {
+				spdk_free(*pages);
+				*pages = NULL;
+				*page_count = 0;
+				return rc;
+			}
+		}
+
+		*remaining_sz -= required_sz;
+		*buf += required_sz;
+	}
+	return 0;
+}
+static int
 blob_serialize(const struct spdk_blob *blob, struct spdk_blob_md_page **pages,
 	       uint32_t *page_count)
 {
@@ -1376,6 +1514,12 @@ blob_serialize(const struct spdk_blob *blob, struct spdk_blob_md_page **pages,
 	/* Serialize internal xattrs */
 	rc = blob_serialize_xattrs(blob, &blob->xattrs_internal, true,
 				   pages, cur_page, page_count, &buf, &remaining_sz);
+	if (rc < 0) {
+		return rc;
+	}
+	
+	/* Serialize reserve clusters */
+	rc = blob_serialize_reserve_clusters(blob, pages, cur_page, page_count, &buf, &remaining_sz);
 	if (rc < 0) {
 		return rc;
 	}
@@ -2152,6 +2296,181 @@ blob_persist_write_page_chain(spdk_bs_sequence_t *seq, struct spdk_blob_persist_
 	}
 
 	bs_batch_close(batch);
+}
+static int blob_release_reserve_cluster(struct spdk_blob *blob, uint32_t claim_cluster_cnt) {
+	if (blob == NULL) {
+		return -1;
+	}
+	if (blob->reserve_cluster_count == 0) {
+		return -1;
+	}
+	uint32_t release_cluster_cnt = 0;
+	uint32_t actual_claim = blob->reserve_cluster_count > claim_cluster_cnt 
+		? claim_cluster_cnt : blob->reserve_cluster_count;
+	struct spdk_blob_reserve_cluster	*curr_cluster, *tmp;
+
+	TAILQ_FOREACH_SAFE(curr_cluster, &blob->reserve_clusters, link, tmp) {
+		TAILQ_REMOVE(&blob->reserve_clusters, curr_cluster, link);
+		bs_release_cluster(blob->bs, curr_cluster->cluster_id);
+		blob->reserve_cluster_count--;
+		release_cluster_cnt++;
+		if (release_cluster_cnt == actual_claim) {
+			SPDK_INFOLOG(blob, "Release (%u) clusters, Pending reserve cluster count (%u)",
+					release_cluster_cnt, blob->reserve_cluster_count);
+		}
+	}
+	return 0;
+}
+
+static int blob_reserve_clusters(struct spdk_blob *blob, uint32_t reserve_cluster_sz) {
+	struct spdk_blob_store *bs;
+	int		rc = 0;
+	uint32_t	i;
+	uint32_t cluster_id;
+
+	bs = blob->bs;
+	assert(!spdk_spin_held(&bs->used_lock));
+	if (spdk_blob_is_thin_provisioned(blob)) {
+		return -EPERM;
+	}
+	spdk_spin_lock(&bs->used_lock);
+	if (reserve_cluster_sz > bs->num_free_clusters) {
+		rc = -ENOSPC;
+		goto out;
+	}
+	for (i = 0; i < reserve_cluster_sz; i++) {
+		cluster_id = bs_claim_cluster(blob->bs);
+		if (cluster_id == UINT32_MAX) {
+			SPDK_WARNLOG("Request reserve cluster for blob: (%p) count: (%u), "
+					"actual reserve: (%u)", blob, reserve_cluster_sz, i + 1);
+			goto out;
+		}
+		struct spdk_blob_reserve_cluster *ctx;
+		ctx = calloc(1, sizeof(*ctx));
+		if (ctx == NULL) {
+			rc = -ENOMEM;
+			goto out;
+		}
+		ctx->cluster_id = cluster_id;
+		TAILQ_INSERT_TAIL(&blob->reserve_clusters, ctx, link);
+		blob->reserve_cluster_count++;
+	}
+	rc = 0;
+out:
+	if (spdk_spin_held(&bs->used_lock)) {
+		spdk_spin_unlock(&bs->used_lock);
+	}
+
+	return rc;
+}
+static int
+blob_claim_reserved_cluster(struct spdk_blob *blob, uint64_t claim_cluster_sz)
+{
+	uint64_t	i;
+	uint64_t	*tmp;
+	uint64_t	cluster;
+	uint32_t	lfmd; /*  lowest free md page */
+	uint64_t	num_clusters;
+	uint32_t	*ep_tmp;
+	uint64_t	new_num_ep = 0, current_num_ep = 0;
+	struct spdk_blob_store *bs;
+	int		rc;
+	uint64_t sz = 0;
+	
+	bs = blob->bs;
+
+	blob_verify_md_op(blob);
+	num_clusters = blob->active.num_clusters;
+	
+	if (blob->use_extent_table) {
+		/* Round up since every cluster beyond current Extent Table size,
+		 * requires new extent page. */
+		new_num_ep = spdk_divide_round_up(claim_cluster_sz, SPDK_EXTENTS_PER_EP);
+		current_num_ep = spdk_divide_round_up(num_clusters, SPDK_EXTENTS_PER_EP);
+	}
+
+	assert(!spdk_spin_held(&bs->used_lock));
+
+	/* Check first that we have enough clusters and md pages before we start claiming them.
+	 * bs->used_lock is held to ensure that clusters we think are free are still free when we go
+	 * to claim them later in this function.
+	 */
+	if (spdk_blob_is_thin_provisioned(blob) == false) {
+		spdk_spin_lock(&bs->used_lock);
+		if (blob_release_reserve_cluster(blob, claim_cluster_sz) != 0) {
+			SPDK_WARNLOG("No reserved cluster information found, claim will be from blobstore");
+		}
+		
+		if (claim_cluster_sz > bs->num_free_clusters) {
+			rc = -ENOSPC;
+			goto out;
+		}
+		lfmd = 0;
+		for (i = current_num_ep; i < new_num_ep ; i++) {
+			lfmd = spdk_bit_array_find_first_clear(blob->bs->used_md_pages, lfmd);
+			if (lfmd == UINT32_MAX) {
+				/* No more free md pages. Cannot satisfy the request */
+				rc = -ENOSPC;
+				goto out;
+			}
+		}
+	}
+	sz = claim_cluster_sz + num_clusters;
+	if (sz > 0) {
+		/* Expand the cluster array if necessary.
+		 * We only shrink the array when persisting.
+		 */
+		tmp = realloc(blob->active.clusters, sizeof(*blob->active.clusters) * sz);
+		if (sz > 0 && tmp == NULL) {
+			rc = -ENOMEM;
+			goto out;
+		}
+		memset(tmp + blob->active.cluster_array_size, 0,
+		       sizeof(*blob->active.clusters) * (sz - blob->active.cluster_array_size));
+		blob->active.clusters = tmp;
+		blob->active.cluster_array_size = sz;
+
+		/* Expand the extents table, only if enough clusters were added */
+		if (new_num_ep > current_num_ep && blob->use_extent_table) {
+			ep_tmp = realloc(blob->active.extent_pages, sizeof(*blob->active.extent_pages) * new_num_ep);
+			if (new_num_ep > 0 && ep_tmp == NULL) {
+				rc = -ENOMEM;
+				goto out;
+			}
+			memset(ep_tmp + blob->active.extent_pages_array_size, 0,
+			       sizeof(*blob->active.extent_pages) * (new_num_ep - blob->active.extent_pages_array_size));
+			blob->active.extent_pages = ep_tmp;
+			blob->active.extent_pages_array_size = new_num_ep;
+		}
+	}
+
+	blob->state = SPDK_BLOB_STATE_DIRTY;
+
+	if (spdk_blob_is_thin_provisioned(blob) == false) {
+		cluster = 0;
+		lfmd = 0;
+		for (i = num_clusters; i < sz; i++) {
+			bs_allocate_cluster(blob, i, &cluster, &lfmd, true);
+			/* Do not increment lfmd here.  lfmd will get updated
+			 * to the md_page allocated (if any) when a new extent
+			 * page is needed.  Just pass that value again,
+			 * bs_allocate_cluster will just start at that index
+			 * to find the next free md_page when needed.
+			 */
+		}
+	}
+
+	blob->active.num_clusters = sz;
+	blob->active.num_extent_pages = new_num_ep;
+	blob->num_used_clusters_cache = 0;
+
+	rc = 0;
+out:
+	if (spdk_spin_held(&bs->used_lock)) {
+		spdk_spin_unlock(&bs->used_lock);
+	}
+
+	return rc;
 }
 
 static int
@@ -3440,6 +3759,46 @@ bs_channel_destroy(void *io_device, void *ctx_buf)
 	channel->dev->destroy_channel(channel->dev, channel->dev_channel);
 }
 
+void hr_list_all_blob(struct spdk_blob* blob) {
+	struct spdk_blob_store *bs = blob->bs;
+	struct spdk_blob	*curr_blob, *blob_tmp;
+	RB_FOREACH_SAFE(curr_blob, spdk_blob_tree, &bs->open_blobs, blob_tmp) {
+		SPDK_ERRLOG("Blob (%p), blobid: (%lu)", curr_blob, curr_blob->id);
+		// struct spdk_blob *next_blob = spdk_blob_tree_RB_NEXT(curr_blob);
+		// if (next_blob != NULL) {
+		// 	SPDK_ERRLOG("Next Blob (%p), blobid: (%lu)", next_blob, next_blob->id);
+		// }
+		const void *value;
+		size_t len;
+		int rc = 0;
+		rc = blob_get_xattr_value(curr_blob, "io-engine.parent_id", &value, &len, false);
+		if (rc == 0) {
+			SPDK_ERRLOG("Parent id: (%s)", (char *)value);
+		}
+	}
+	struct spdk_blob_list *snapshot_entry;
+	TAILQ_FOREACH(snapshot_entry, &blob->bs->snapshots, link) {
+		SPDK_ERRLOG("Snapshot id: (%lu)", snapshot_entry->id);
+	}
+	// curr_blob = RB_MIN(spdk_blob_tree, &bs->open_blobs);
+	// while (curr_blob != NULL) {
+	// 	struct spdk_blob *next_blob = RB_NEXT(spdk_blob_tree, &bs->open_blobs, curr_blob);
+	// 	if (next_blob == NULL) break;
+	// 	SPDK_ERRLOG("Current Blob (%p), id: (%lu), Next Blob (%p) id: (%lu)", curr_blob, curr_blob->id, next_blob, next_blob->id);
+	// 	curr_blob = next_blob;
+	// }
+	// struct spdk_blob* b = blob;
+	// SPDK_ERRLOG("Current Replica Blob: (%p), id: (%lu)", b, b->id);
+	// while (b->parent_id != SPDK_BLOBID_INVALID) {
+	// 	spdk_blob_id blob_id = b->parent_id;
+	// 	b = blob_lookup(bs, blob_id);
+	// 	if (b == NULL) {
+	// 		SPDK_ERRLOG("Can't lookup parent blob with ID %ld", blob_id);
+	// 		break;
+	// 	}
+	// 	SPDK_ERRLOG("Parent Blob: (%p), id: (%lu)", b, b->id);
+	// }
+}
 static void
 bs_dev_destroy(void *io_device)
 {
@@ -6314,7 +6673,7 @@ bs_clone_snapshot_origblob_cleanup(void *cb_arg, int bserrno)
 	} else {
 		bs_snapshot_unfreeze_cpl(ctx, 0);
 	}
-
+	hr_list_all_blob(origblob);
 }
 
 static void
@@ -6562,8 +6921,14 @@ bs_snapshot_newblob_open_cpl(void *cb_arg, struct spdk_blob *_blob, int bserrno)
 				 newblob->active.num_clusters * sizeof(*newblob->active.clusters)));
 	assert(spdk_mem_all_zero(newblob->active.extent_pages,
 				 newblob->active.num_extent_pages * sizeof(*newblob->active.extent_pages)));
-
 	blob_freeze_io(origblob, bs_snapshot_freeze_cpl, ctx);
+	// hr_list_all_blob(origblob);
+	// ctx->original.id = origblob->id;
+	// origblob->locked_operation_in_progress = false;
+
+	// /* Revert md_ro to original state */
+	// origblob->md_ro = ctx->original.md_ro;
+	// spdk_blob_close(newblob, bs_clone_snapshot_origblob_cleanup, ctx);
 }
 
 static void
@@ -7071,6 +7436,23 @@ bs_resize_unfreeze_cpl(void *cb_arg, int rc)
 }
 
 static void
+bs_claim_freeze_cpl(void *cb_arg, int rc)
+{
+	struct spdk_bs_resize_ctx *ctx = (struct spdk_bs_resize_ctx *)cb_arg;
+
+	if (rc != 0) {
+		ctx->blob->locked_operation_in_progress = false;
+		ctx->cb_fn(ctx->cb_arg, rc);
+		free(ctx);
+		return;
+	}
+
+	ctx->rc = blob_claim_reserved_cluster(ctx->blob, ctx->sz);
+
+	blob_unfreeze_io(ctx->blob, bs_resize_unfreeze_cpl, ctx);
+}
+
+static void
 bs_resize_freeze_cpl(void *cb_arg, int rc)
 {
 	struct spdk_bs_resize_ctx *ctx = (struct spdk_bs_resize_ctx *)cb_arg;
@@ -7127,7 +7509,69 @@ spdk_blob_resize(struct spdk_blob *blob, uint64_t sz, spdk_blob_op_complete cb_f
 
 /* END spdk_blob_resize */
 
+void
+spdk_blob_reserve(struct spdk_blob *blob, uint32_t sz, spdk_blob_op_complete cb_fn, void *cb_arg)
+{
+	int rc;
+	blob_verify_md_op(blob);
 
+	SPDK_DEBUGLOG(blob, "Reserve blob 0x%" PRIx64 " for %" PRIu32 " clusters\n", blob->id, sz);
+
+	if (blob->md_ro) {
+		cb_fn(cb_arg, -EPERM);
+		return;
+	}
+
+	if (blob->locked_operation_in_progress) {
+		cb_fn(cb_arg, -EBUSY);
+		return;
+	}
+
+	blob->locked_operation_in_progress = true;
+	rc = blob_reserve_clusters(blob, sz);
+
+	blob->locked_operation_in_progress = false;
+	blob->state = SPDK_BLOB_STATE_DIRTY;
+	cb_fn(cb_arg, rc);
+	return;
+}
+
+void
+spdk_blob_claim_reserve(struct spdk_blob *blob, uint32_t sz, spdk_blob_op_complete cb_fn, void *cb_arg)
+{
+	struct spdk_bs_resize_ctx *ctx;
+
+	blob_verify_md_op(blob);
+
+	SPDK_DEBUGLOG(blob, "Claim reserve cluster (%u) for blob (%lu)", sz, blob->id);
+	if (blob->md_ro) {
+		cb_fn(cb_arg, -EPERM);
+		return;
+	}
+
+	if (sz == blob->active.num_clusters) {
+		cb_fn(cb_arg, 0);
+		return;
+	}
+
+	if (blob->locked_operation_in_progress) {
+		cb_fn(cb_arg, -EBUSY);
+		return;
+	}
+
+	ctx = calloc(1, sizeof(*ctx));
+	if (!ctx) {
+		cb_fn(cb_arg, -ENOMEM);
+		return;
+	}
+
+	blob->locked_operation_in_progress = true;
+	ctx->cb_fn = cb_fn;
+	ctx->cb_arg = cb_arg;
+	ctx->blob = blob;
+	ctx->sz = sz;
+	blob_freeze_io(blob, bs_claim_freeze_cpl, ctx);
+}
 /* START spdk_bs_delete_blob */
 
 static void

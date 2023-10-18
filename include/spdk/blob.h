@@ -842,6 +842,36 @@ void spdk_blob_resize(struct spdk_blob *blob, uint64_t sz, spdk_blob_op_complete
 		      void *cb_arg);
 
 /**
+ * Reserve 'sz' number of clusters in blob. These changes are not persisted to disk until
+ * spdk_bs_md_sync_blob() is called.
+ * If called before previous reserve finish, it will fail with errno -EBUSY
+ *
+ * \param blob Blob to resize.
+ * \param sz The new number of clusters.
+ * \param cb_fn Called when the operation is complete.
+ * \param cb_arg Argument passed to function cb_fn.
+ *
+ */
+
+void spdk_blob_reserve(struct spdk_blob *blob, uint32_t sz, spdk_blob_op_complete cb_fn,
+		      void *cb_arg);
+
+/**
+ * Claim 'sz' number of clusters from blob reserved clusters. If reserved clusters
+ * are not enough in the blob, it will take the clusters from existing pool.
+ * These changes are not persisted to disk until
+ * spdk_bs_md_sync_blob() is called.
+ * If called before previous claim finish, it will fail with errno -EBUSY
+ *
+ * \param blob Blob to resize.
+ * \param sz The new number of clusters.
+ * \param cb_fn Called when the operation is complete.
+ * \param cb_arg Argument passed to function cb_fn.
+ *
+ */
+void spdk_blob_claim_reserve(struct spdk_blob *blob, uint32_t sz, spdk_blob_op_complete cb_fn,
+		      void *cb_arg);
+/**
  * Set blob as read only.
  *
  * These changes do not take effect until spdk_blob_sync_md() is called.
@@ -1179,6 +1209,7 @@ bool spdk_blob_is_degraded(const struct spdk_blob *blob);
  * \param blob for which need to reset the usage cache.
  */
 void spdk_blob_reset_used_clusters_cache(struct spdk_blob *blob);
+
 
 #ifdef __cplusplus
 }

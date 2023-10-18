@@ -98,6 +98,10 @@ struct spdk_blob_list {
 	TAILQ_ENTRY(spdk_blob_list) link;
 };
 
+struct spdk_blob_reserve_cluster {
+	uint32_t cluster_id;
+	TAILQ_ENTRY(spdk_blob_reserve_cluster) link;
+};
 struct spdk_blob {
 	struct spdk_blob_store *bs;
 
@@ -144,13 +148,15 @@ struct spdk_blob {
 	/* A list of pending metadata pending_persists */
 	TAILQ_HEAD(, spdk_blob_persist_ctx) pending_persists;
 	TAILQ_HEAD(, spdk_blob_persist_ctx) persists_to_complete;
-
+	
 	/* Number of data clusters retrieved from extent table,
 	 * that many have to be read from extent pages. */
 	uint64_t	remaining_clusters_in_et;
 
 	/* Cache number of used cluster for a thin provisioned blob. */
 	uint64_t	num_used_clusters_cache;
+	TAILQ_HEAD(, spdk_blob_reserve_cluster) reserve_clusters;
+	uint32_t reserve_cluster_count;
 };
 
 struct spdk_blob_store {
@@ -286,6 +292,8 @@ struct spdk_bs_md_mask {
  * serialized metadata chain for a blob. */
 #define SPDK_MD_DESCRIPTOR_TYPE_EXTENT_PAGE 6
 
+#define SPDK_MD_DESCRIPTOR_TYPE_RESERVE_CLUSTER 7
+
 struct spdk_blob_md_descriptor_xattr {
 	uint8_t		type;
 	uint32_t	length;
@@ -365,6 +373,8 @@ struct spdk_blob_md_descriptor_flags {
 	 *  allow the blob to be opened in md_read_only mode.
 	 */
 	uint64_t	md_ro_flags;
+
+	uint32_t reserve_cluster_count;
 };
 
 struct spdk_blob_md_descriptor {
