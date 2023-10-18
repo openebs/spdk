@@ -1119,7 +1119,6 @@ lvol_create_open_cb(void *cb_arg, struct spdk_blob *blob, int lvolerrno)
 	}
 
 	lvol->ref_count++;
-
 	assert(req->cb_fn != NULL);
 	req->cb_fn(req->cb_arg, req->lvol, lvolerrno);
 	free(req);

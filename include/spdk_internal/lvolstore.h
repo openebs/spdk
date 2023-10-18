@@ -132,5 +132,6 @@ bool spdk_lvs_notify_hotplug(const void *esnap_id, uint32_t id_len,
  * present in the blob cache can be cleared.
  */
 void blob_reset_used_clusters_cache(struct spdk_blob *blob);
+void hr_list_all_blob(struct spdk_blob* blob);
 
 #endif /* SPDK_INTERNAL_LVOLSTORE_H */
