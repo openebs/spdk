@@ -7021,6 +7021,12 @@ bdev_io_complete(void *ctx)
 
 	tsc = spdk_get_ticks();
 	tsc_diff = tsc - bdev_io->internal.submit_tsc;
+	uint64_t time_us = (tsc_diff * 1000000) / tsc;
+	uint64_t time_s = time_us / 1000000;
+	if (time_s > 4) {
+		SPDK_ERRLOG("IO TOOK %d seconds to complete\n", time_s);
+	}
+
 	spdk_trace_record_tsc(tsc, TRACE_BDEV_IO_DONE, 0, 0, (uintptr_t)bdev_io,
 			      bdev_io->internal.caller_ctx);
 
@@ -7028,6 +7034,10 @@ bdev_io_complete(void *ctx)
 
 	if (bdev_io->internal.ch->histogram) {
 		spdk_histogram_data_tally(bdev_io->internal.ch->histogram, tsc_diff);
+	}
+
+	if (spdk_unlikely(bdev_io->internal.status != SPDK_BDEV_IO_STATUS_SUCCESS)) {
+		SPDK_ERRLOG("IO TOOK completed with error!");
 	}
 
 	bdev_io_update_io_stat(bdev_io, tsc_diff);
@@ -7112,6 +7122,12 @@ spdk_bdev_io_complete(struct spdk_bdev_io *bdev_io, enum spdk_bdev_io_status sta
 	struct spdk_bdev *bdev = bdev_io->bdev;
 	struct spdk_bdev_channel *bdev_ch = bdev_io->internal.ch;
 	struct spdk_bdev_shared_resource *shared_resource = bdev_ch->shared_resource;
+
+	if (status == SPDK_BDEV_IO_STATUS_NOMEM) {
+		SPDK_ERRLOG("Unexpected completion on IO from %s module, status was %s\n",
+			    spdk_bdev_get_module_name(bdev),
+			    bdev_io_status_get_string(bdev_io->internal.status));
+	}
 
 	if (bdev_io->internal.status != SPDK_BDEV_IO_STATUS_PENDING) {
 		SPDK_ERRLOG("Unexpected completion on IO from %s module, status was %s\n",

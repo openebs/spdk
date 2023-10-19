@@ -131,6 +131,7 @@ bdev_blob_write(struct spdk_bs_dev *dev, struct spdk_io_channel *channel, void *
 	rc = spdk_bdev_write_blocks(__get_desc(dev), channel, payload, lba,
 				    lba_count, bdev_blob_io_complete, cb_args);
 	if (rc == -ENOMEM) {
+		SPDK_ERRLOG("WRITE ENOMEM\n");
 		bdev_blob_queue_io(dev, channel, payload, 0, lba, 0,
 				   lba_count, SPDK_BDEV_IO_TYPE_WRITE, cb_args, NULL);
 	} else if (rc != 0) {
@@ -148,6 +149,7 @@ bdev_blob_readv(struct spdk_bs_dev *dev, struct spdk_io_channel *channel,
 	rc = spdk_bdev_readv_blocks(__get_desc(dev), channel, iov, iovcnt, lba,
 				    lba_count, bdev_blob_io_complete, cb_args);
 	if (rc == -ENOMEM) {
+		SPDK_ERRLOG("READ ENOMEM\n");
 		bdev_blob_queue_io(dev, channel, iov, iovcnt, lba, 0,
 				   lba_count, SPDK_BDEV_IO_TYPE_READ, cb_args, NULL);
 	} else if (rc != 0) {
@@ -165,6 +167,7 @@ bdev_blob_writev(struct spdk_bs_dev *dev, struct spdk_io_channel *channel,
 	rc = spdk_bdev_writev_blocks(__get_desc(dev), channel, iov, iovcnt, lba,
 				     lba_count, bdev_blob_io_complete, cb_args);
 	if (rc == -ENOMEM) {
+		SPDK_ERRLOG("WRITEV ENOMEM\n");
 		bdev_blob_queue_io(dev, channel, iov, iovcnt, lba, 0,
 				   lba_count, SPDK_BDEV_IO_TYPE_WRITE, cb_args, NULL);
 	} else if (rc != 0) {
@@ -285,6 +288,7 @@ static void
 bdev_blob_resubmit(void *arg)
 {
 	struct blob_resubmit *ctx = (struct blob_resubmit *) arg;
+	SPDK_ERRLOG("RESUBMIT!\n");
 
 	switch (ctx->io_type) {
 	case SPDK_BDEV_IO_TYPE_READ:

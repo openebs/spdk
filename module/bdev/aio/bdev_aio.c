@@ -196,6 +196,7 @@ bdev_aio_writev(struct file_disk *fdisk, struct spdk_io_channel *ch,
 	rc = io_submit(aio_ch->io_ctx, 1, &iocb);
 	if (spdk_unlikely(rc < 0)) {
 		if (rc == -EAGAIN) {
+			SPDK_ERRLOG("%s: io_submit returned EAGAIN! %d\n", __func__, rc);
 			spdk_bdev_io_complete(spdk_bdev_io_from_ctx(aio_task), SPDK_BDEV_IO_STATUS_NOMEM);
 		} else {
 			spdk_bdev_io_complete_aio_status(spdk_bdev_io_from_ctx(aio_task), rc);
