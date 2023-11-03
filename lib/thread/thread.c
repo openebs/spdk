@@ -2353,6 +2353,11 @@ put_io_channel(void *arg)
 		      "Releasing io_channel %p for io_device %s (%p) on thread %s\n",
 		      ch, ch->dev->name, ch->dev->io_device, thread->name);
 
+	SPDK_ERRLOG("@@@@ put_io_channel(): io_chan=%p, chan_ctx=%p, io_device='%s' (%p), thread='%s' (%p)\n",
+		      ch, spdk_io_channel_get_ctx(ch),
+		      ch->dev->name, ch->dev->io_device,
+		      thread->name, thread);
+
 	assert(ch->thread == thread);
 
 	ch->destroy_ref--;

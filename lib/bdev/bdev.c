@@ -3650,6 +3650,14 @@ bdev_channel_destroy_resource(struct spdk_bdev_channel *ch)
 {
 	struct spdk_bdev_shared_resource *shared_resource;
 	struct lba_range *range;
+	struct spdk_thread *tt = spdk_get_thread();
+	const char *tt_name = tt ? spdk_thread_get_name(tt) : "<null>";
+
+	SPDK_ERRLOG("@@@@ bdev_channel_destroy_resource(): chan_ctx=%p, bdev='%s', thread='%s' (%p)\n",
+		ch,
+		ch->bdev->name,
+		tt_name, tt);
+
 
 	bdev_free_io_stat(ch->stat);
 #ifdef SPDK_CONFIG_VTUNE
@@ -3668,7 +3676,14 @@ bdev_channel_destroy_resource(struct spdk_bdev_channel *ch)
 	shared_resource = ch->shared_resource;
 
 	assert(TAILQ_EMPTY(&ch->io_locked));
+
+	if (TAILQ_EMPTY(&ch->io_submitted)) {
+		SPDK_ERRLOG("    |--> io_submitted empty: chan_ctx=%p, thread='%s' (%p)\n", ch, tt_name, tt);
+	} else {
+		SPDK_ERRLOG("    |--> io_submitted NOT EMPTY: chan_ctx=%p, thread='%s' (%p)\n", ch, tt_name, tt);
+	}
 	assert(TAILQ_EMPTY(&ch->io_submitted));
+
 	assert(TAILQ_EMPTY(&ch->io_accel_exec));
 	assert(TAILQ_EMPTY(&ch->io_memory_domain));
 	assert(ch->io_outstanding == 0);
@@ -3876,6 +3891,7 @@ bdev_channel_create(void *io_device, void *ctx_buf)
 	struct spdk_bdev_mgmt_channel	*mgmt_ch;
 	struct spdk_bdev_shared_resource *shared_resource;
 	struct lba_range		*range;
+	struct spdk_thread		*tt;
 
 	ch->bdev = bdev;
 	ch->channel = bdev->fn_table->get_io_channel(bdev->ctxt);
@@ -3993,6 +4009,13 @@ bdev_channel_create(void *io_device, void *ctx_buf)
 	}
 
 	spdk_spin_unlock(&bdev->internal.spinlock);
+
+	tt = spdk_get_thread();
+	SPDK_ERRLOG("@@@@ bdev_channel_create(): chan_ctx=%p, io_device=%p, bdev='%s', thread='%s' (%p)\n",
+		ch,
+		io_device,
+		bdev->name,
+		tt ? spdk_thread_get_name(tt) : "<null>", tt);
 
 	return 0;
 }
@@ -4354,9 +4377,16 @@ static void
 bdev_channel_destroy(void *io_device, void *ctx_buf)
 {
 	struct spdk_bdev_channel *ch = ctx_buf;
+	struct spdk_thread* tt = spdk_get_thread();
 
 	SPDK_DEBUGLOG(bdev, "Destroying channel %p for bdev %s on thread %p\n", ch, ch->bdev->name,
 		      spdk_get_thread());
+
+	SPDK_ERRLOG("@@@@ bdev_channel_destroy(): chan_ctx=%p, io_device=%p, bdev='%s', thread='%s' (%p)\n",
+		ctx_buf,
+		io_device,
+		ch->bdev->name,
+		tt ? spdk_thread_get_name(tt) : "<null>", tt);
 
 	spdk_trace_record(TRACE_BDEV_IOCH_DESTROY, 0, 0, 0, ch->bdev->name,
 			  spdk_thread_get_id(spdk_io_channel_get_thread(ch->channel)));
