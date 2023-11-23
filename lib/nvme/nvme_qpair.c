@@ -756,6 +756,8 @@ spdk_nvme_qpair_process_completions(struct spdk_nvme_qpair *qpair, uint32_t max_
 		nvme_complete_register_operations(qpair);
 	}
 
+	//fprintf(stderr, "qpair process completions\n");
+
 	if (spdk_unlikely(qpair->ctrlr->is_failed &&
 			  nvme_qpair_get_state(qpair) != NVME_QPAIR_DISCONNECTING)) {
 		if (qpair->ctrlr->is_removed) {
@@ -763,6 +765,7 @@ spdk_nvme_qpair_process_completions(struct spdk_nvme_qpair *qpair, uint32_t max_
 			nvme_qpair_abort_all_queued_reqs(qpair);
 			nvme_transport_qpair_abort_reqs(qpair);
 		}
+		fprintf(stderr, "ENIO1.\n");
 		return -ENXIO;
 	}
 
@@ -773,12 +776,14 @@ spdk_nvme_qpair_process_completions(struct spdk_nvme_qpair *qpair, uint32_t max_
 		 * qpair is not enabled, likely because a controller reset is
 		 *  in progress.
 		 */
+		fprintf(stderr, "ENIO2.\n");
 		return -ENXIO;
 	}
 
 	/* error injection for those queued error requests */
 	if (spdk_unlikely(!STAILQ_EMPTY(&qpair->err_req_head))) {
 		STAILQ_FOREACH_SAFE(req, &qpair->err_req_head, stailq, tmp) {
+			fprintf(stderr, "Tiemout check\n");
 			if (spdk_get_ticks() - req->submit_tick > req->timeout_tsc) {
 				STAILQ_REMOVE(&qpair->err_req_head, req, nvme_request, stailq);
 				nvme_qpair_manual_complete_request(qpair, req,
@@ -792,6 +797,7 @@ spdk_nvme_qpair_process_completions(struct spdk_nvme_qpair *qpair, uint32_t max_
 	ret = nvme_transport_qpair_process_completions(qpair, max_completions);
 	if (ret < 0) {
 		if (ret == -ENXIO && nvme_qpair_get_state(qpair) == NVME_QPAIR_DISCONNECTING) {
+			fprintf(stderr, "EXff.\n");
 			ret = 0;
 		} else {
 			SPDK_ERRLOG("CQ transport error %d (%s) on qpair id %hu\n",
@@ -942,7 +948,7 @@ _nvme_qpair_submit_request(struct spdk_nvme_qpair *qpair, struct nvme_request *r
 			nvme_request_free_children(child_req);
 			nvme_free_request(child_req);
 		}
-
+		fprintf(stderr, "EX!!!!!!!!!aaaadasdasd!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!. %d\n", nvme_qpair_get_state(qpair));
 		rc = -ENXIO;
 		goto error;
 	}
@@ -1002,6 +1008,7 @@ _nvme_qpair_submit_request(struct spdk_nvme_qpair *qpair, struct nvme_request *r
 	}
 
 	if (spdk_unlikely(ctrlr->is_failed)) {
+		fprintf(stderr, "EX!xcs!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!.\n");
 		rc = -ENXIO;
 		goto error;
 	}

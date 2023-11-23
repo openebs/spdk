@@ -444,11 +444,14 @@ spdk_nvme_ctrlr_io_qpair_connect_poll_async(
 	int rc = 0;
 	int n;
 
+	fprintf(stderr, "POLL ASYNC!!.\n");
+
 	switch (probe_ctx->state) {
 	case INIT:
 		/* Check if I/O qpair supports asynchronous qpair connection. */
 		if (!qpair->async) {
 			SPDK_ERRLOG("asynchronous mode is turned off for I/O qpair 0x%p", qpair);
+			fprintf(stderr, "ERR xp C.\n");
 			rc = -ENXIO;
 			goto out_error;
 		}
@@ -456,12 +459,20 @@ spdk_nvme_ctrlr_io_qpair_connect_poll_async(
 		/* Initiate I/O qpair connection. */
 		rc = nvme_transport_ctrlr_connect_qpair(qpair->ctrlr, qpair);
 		if (rc != 0) {
+			fprintf(stderr, "ERR %d C.\n", rc);
 			goto out_error;
 		}
+		probe_ctx->state = DUMMY;// WAIT_FOR_CONNECT;
+		fprintf(stderr, "INITED!!!!.\n");
+		break;
+	case DUMMY:
+		fprintf(stderr, "WAIT_FOR_CONNECT.\n");
 		probe_ctx->state = WAIT_FOR_CONNECT;
 		break;
 	case WAIT_FOR_CONNECT:
+		fprintf(stderr, "WAIT FOR C.\n");
 		n = spdk_nvme_qpair_process_completions(qpair, 0);
+		fprintf(stderr, "PROC DONE!!.\n");
 
 		/* Check for transport errors. */
 		if (n < 0) {
@@ -630,6 +641,7 @@ spdk_nvme_ctrlr_reconnect_io_qpair(struct spdk_nvme_qpair *qpair)
 	}
 
 	if (ctrlr->is_failed || qpair_state == NVME_QPAIR_DESTROYING) {
+		fprintf(stderr, "EX!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!A.\n");
 		rc = -ENXIO;
 		goto out;
 	}
@@ -1714,6 +1726,7 @@ nvme_ctrlr_disconnect(struct spdk_nvme_ctrlr *ctrlr)
 		 *  immediately since there is no need to kick off another
 		 *  reset in these cases.
 		 */
+		fprintf(stderr, "EXb.\n");
 		return ctrlr->is_resetting ? -EBUSY : -ENXIO;
 	}
 
@@ -1922,6 +1935,7 @@ spdk_nvme_ctrlr_reset(struct spdk_nvme_ctrlr *ctrlr)
 
 	while (1) {
 		rc = spdk_nvme_ctrlr_process_admin_completions(ctrlr);
+		fprintf(stderr, "EX!!!!!!!gfgfg!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!.\n");
 		if (rc == -ENXIO) {
 			break;
 		}
@@ -2544,6 +2558,7 @@ nvme_ctrlr_identify_active_ns(struct spdk_nvme_ctrlr *ctrlr)
 
 	if (ctx->state == NVME_ACTIVE_NS_STATE_ERROR) {
 		nvme_active_ns_ctx_destroy(ctx);
+		fprintf(stderr, "EX!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!s!!!!!!!!!!!!!.\n");
 		return -ENXIO;
 	}
 
@@ -4418,6 +4433,7 @@ spdk_nvme_ctrlr_process_admin_completions(struct spdk_nvme_ctrlr *ctrlr)
 	}
 
 	if (rc == -ENXIO && ctrlr->is_disconnecting) {
+		fprintf(stderr, "EXASD.\n");
 		nvme_ctrlr_disconnect_done(ctrlr);
 	}
 
@@ -4963,6 +4979,7 @@ spdk_nvme_ctrlr_update_firmware(struct spdk_nvme_ctrlr *ctrlr, void *payload, ui
 			} else {
 				NVME_CTRLR_ERRLOG(ctrlr, "nvme_ctrlr_cmd_fw_commit failed!\n");
 			}
+			fprintf(stderr, "EXsdfn");
 			return -ENXIO;
 		}
 	}

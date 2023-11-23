@@ -1826,6 +1826,7 @@ fail:
 	} else {
 		nvme_ctrlr_disconnect_qpair(qpair);
 	}
+	fprintf(stderr, "EX!!!!!!!!!!!!!!!!!aasdasd!!!!!!!!!!!!!!!!!!!!!!!!!!.\n");
 	return -ENXIO;
 }
 
@@ -1848,6 +1849,7 @@ nvme_tcp_qpair_sock_cb(void *ctx, struct spdk_sock_group *group, struct spdk_soc
 		pgroup->num_completions += num_completions;
 		pgroup->stats.nvme_completions += num_completions;
 	} else {
+		fprintf(stderr, "EX!!!!!!!!!!sf sad!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!.\n");
 		pgroup->num_completions = -ENXIO;
 	}
 }

@@ -475,12 +475,14 @@ nvme_transport_ctrlr_connect_qpair(struct spdk_nvme_ctrlr *ctrlr, struct spdk_nv
 	nvme_qpair_set_state(qpair, NVME_QPAIR_CONNECTING);
 	rc = transport->ops.ctrlr_connect_qpair(ctrlr, qpair);
 	if (rc != 0) {
+		fprintf(stderr, "HERE1.\n");
 		goto err;
 	}
 
 	if (qpair->poll_group) {
 		rc = nvme_poll_group_connect_qpair(qpair);
 		if (rc) {
+			fprintf(stderr, "HERE2.\n");
 			goto err;
 		}
 	}
@@ -604,6 +606,8 @@ int32_t
 nvme_transport_qpair_process_completions(struct spdk_nvme_qpair *qpair, uint32_t max_completions)
 {
 	const struct spdk_nvme_transport *transport;
+
+	//fprintf(stderr, "qqqqqqqqq qpair process completions\n");
 
 	if (spdk_likely(!nvme_qpair_is_admin_queue(qpair))) {
 		return qpair->transport->ops.qpair_process_completions(qpair, max_completions);

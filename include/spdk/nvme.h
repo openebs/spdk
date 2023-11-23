@@ -328,6 +328,7 @@ typedef void (*spdk_io_qpair_connect_cb)(struct spdk_nvme_qpair *qpair, void *cb
 
 enum io_qpair_connect_state {
 	INIT,               /* Newly initiated connection. */
+	DUMMY,
 	WAIT_FOR_CONNECT,   /* Connection initiated. */
 	CONNECTED,          /* Connection successfully completed. */
 };
