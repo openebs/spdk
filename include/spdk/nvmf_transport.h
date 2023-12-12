@@ -698,7 +698,7 @@ void spdk_nvmf_ctrlr_abort_aer(struct spdk_nvmf_ctrlr *ctrlr);
  * \param cb_arg Argument passed by callback function.
  */
 typedef void (spdk_nvmf_ctrlr_cpl_error_cb_fn)(struct spdk_nvmf_request *req,
-					       void *cb_arg);
+		void *cb_arg);
 
 /**
  * Register callback function to receive subsystem events.

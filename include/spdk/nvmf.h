@@ -480,9 +480,9 @@ enum spdk_nvmf_subsystem_event {
  * \param cb_arg Argument passed by callback function.
  */
 typedef void (*spdk_nvmf_subsystem_event_cb)(struct spdk_nvmf_subsystem *subsystem,
-					     enum spdk_nvmf_subsystem_event event,
-					     void *ctx,
-					     void *cb_arg);
+		enum spdk_nvmf_subsystem_event event,
+		void *ctx,
+		void *cb_arg);
 
 /**
  * Register callback function to receive subsystem events.

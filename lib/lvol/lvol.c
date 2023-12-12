@@ -118,7 +118,8 @@ lvs_free(struct spdk_lvol_store *lvs)
 }
 
 static struct spdk_lvol *
-lvol_alloc(struct spdk_lvol_store *lvs, const char *name, struct spdk_uuid *user_uuid, bool thin_provision,
+lvol_alloc(struct spdk_lvol_store *lvs, const char *name, struct spdk_uuid *user_uuid,
+	   bool thin_provision,
 	   enum lvol_clear_method clear_method)
 {
 	struct spdk_lvol *lvol;
