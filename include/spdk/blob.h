@@ -35,6 +35,7 @@
 
 #include "spdk/stdinc.h"
 #include "spdk/assert.h"
+#include "spdk/bit_array.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -1179,6 +1180,30 @@ bool spdk_blob_is_degraded(const struct spdk_blob *blob);
  * \param blob for which need to reset the usage cache.
  */
 void spdk_blob_reset_used_clusters_cache(struct spdk_blob *blob);
+
+/**
+ * Blob get cluster bitmap completion callback.
+ *
+ * \param cb_arg Callback argument.
+ * \param bserrno 0 if it completed successfully, or negative errno if it failed.
+ * \param bitmap NULL if no memory available, otherwise a bitmap where each bit corresponds
+ * to a cluster. A set bit indicates the cluster is owned by the blob.
+ */
+typedef void (*spdk_blob_cluster_bitmap_complete)(void *cb_arg, int bserrno,
+		struct spdk_bit_array *bitmap);
+
+/**
+ * Get the allocated cluster bitmap of the given blob.
+ *
+ * \param blob Blob to retrieve allocated bitmap from.
+ * \param cb_fn Called when the operation is complete.
+ * \param cb_arg Custom cb_arg passed to function cb_fn.
+ *
+ * \return 0 if callback was called, or negative errno otherwise.
+ */
+int
+spdk_blob_get_cluster_bitmap(struct spdk_blob *blob, spdk_blob_cluster_bitmap_complete cb_fn,
+			     void *cb_arg);
 
 #ifdef __cplusplus
 }

@@ -11,7 +11,6 @@
 #include "spdk/env.h"
 #include "spdk/queue.h"
 #include "spdk/thread.h"
-#include "spdk/bit_array.h"
 #include "spdk/bit_pool.h"
 #include "spdk/likely.h"
 #include "spdk/util.h"
@@ -5985,6 +5984,107 @@ spdk_blob_reset_used_clusters_cache(struct spdk_blob *blob)
 		spdk_spin_unlock(&blob->bs->used_lock);
 	}
 }
+
+struct spdk_blob_bitmap_ctx {
+	spdk_blob_cluster_bitmap_complete cb_fn;
+	void *cb_arg;
+	struct spdk_bit_array *bitmap;
+	struct spdk_blob *blob;
+};
+
+static void
+spdk_blob_bitmap_cpl(struct spdk_blob_bitmap_ctx *ctx, int rc)
+{
+	ctx->cb_fn(ctx->cb_arg, rc, ctx->bitmap);
+	spdk_bit_array_free(&ctx->bitmap);
+	free(ctx);
+}
+
+static void
+spdk_blob_bitmap_unfreeze_cpl(void *cb_arg, int rc)
+{
+	struct spdk_blob_bitmap_ctx *ctx = (struct spdk_blob_bitmap_ctx *)cb_arg;
+
+	if (rc != 0) {
+		SPDK_ERRLOG("Unfreeze failed, rc=%d\n", rc);
+	}
+
+	ctx->blob->locked_operation_in_progress = false;
+	spdk_blob_bitmap_cpl(ctx, rc);
+}
+
+static void
+spdk_blob_create_bitmap(struct spdk_blob_bitmap_ctx *ctx)
+{
+	struct spdk_blob *blob = ctx->blob;
+	uint64_t i;
+
+	ctx->bitmap = spdk_bit_array_create(blob->active.num_clusters);
+	if (ctx->bitmap == NULL) {
+		SPDK_ERRLOG("Failed to allocate bit array memory for blob #%ld", blob->id);
+		return;
+	}
+
+	for (i = 0; i < blob->active.num_clusters; i++) {
+		if (blob->active.clusters[i]) {
+			spdk_bit_array_set(ctx->bitmap, i);
+		}
+	}
+}
+
+static void
+spdk_blob_bitmap_freeze_cpl(void *cb_arg, int rc)
+{
+	struct spdk_blob_bitmap_ctx *ctx = (struct spdk_blob_bitmap_ctx *)cb_arg;
+
+	if (rc != 0) {
+		ctx->blob->locked_operation_in_progress = false;
+		ctx->cb_fn(ctx->cb_arg, rc, NULL);
+		spdk_bit_array_free(&ctx->bitmap);
+		free(ctx);
+		return;
+	}
+
+	spdk_blob_create_bitmap(ctx);
+	blob_unfreeze_io(ctx->blob, spdk_blob_bitmap_unfreeze_cpl, ctx);
+}
+
+int
+spdk_blob_get_cluster_bitmap(struct spdk_blob *blob, spdk_blob_cluster_bitmap_complete cb_fn,
+			     void *cb_arg)
+{
+	struct spdk_blob_bitmap_ctx *ctx;
+
+	assert(blob != NULL);
+	if (blob->locked_operation_in_progress) {
+		return -EBUSY;
+	}
+
+	if (blob->state != SPDK_BLOB_STATE_CLEAN) {
+		return -EBADFD;
+	}
+
+	ctx = malloc(sizeof(*ctx));
+	if (!ctx) {
+		return -ENOMEM;
+	}
+
+	ctx->blob = blob;
+	ctx->cb_fn = cb_fn;
+	ctx->cb_arg = cb_arg;
+
+	if (blob->data_ro && blob->md_ro) {
+		spdk_blob_create_bitmap(ctx);
+		spdk_blob_bitmap_cpl(ctx, 0);
+		return 0;
+	}
+
+	blob->locked_operation_in_progress = true;
+	blob_freeze_io(blob, spdk_blob_bitmap_freeze_cpl, ctx);
+
+	return 0;
+}
+
 /* START spdk_bs_create_blob */
 
 static void
