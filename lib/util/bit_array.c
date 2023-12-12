@@ -132,6 +132,11 @@ spdk_bit_array_capacity(const struct spdk_bit_array *ba)
 {
 	return ba->bit_count;
 }
+const uint64_t *
+spdk_bit_array_words(const struct spdk_bit_array *ba)
+{
+	return ba->words;
+}
 
 static inline int
 bit_array_get_word(const struct spdk_bit_array *ba, uint32_t bit_index,
