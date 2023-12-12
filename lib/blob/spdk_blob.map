@@ -24,6 +24,7 @@
 	spdk_blob_get_num_clusters;
 	spdk_blob_get_num_allocated_clusters;
 	spdk_blob_get_num_clusters_ancestors;
+	spdk_blob_get_cluster_bitmap;
 	spdk_blob_reset_used_clusters_cache;
 	spdk_blob_get_next_allocated_io_unit;
 	spdk_blob_get_next_unallocated_io_unit;
