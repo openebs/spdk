@@ -22,6 +22,7 @@
 	spdk_bit_array_store_mask;
 	spdk_bit_array_load_mask;
 	spdk_bit_array_clear_mask;
+	spdk_bit_array_words;
 
 	# public functions in bit_pool.h
 	spdk_bit_pool_capacity;
