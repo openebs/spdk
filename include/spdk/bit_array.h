@@ -31,6 +31,15 @@ struct spdk_bit_array;
 uint32_t spdk_bit_array_capacity(const struct spdk_bit_array *ba);
 
 /**
+ * Return the inner words of the bit array.
+ *
+ * \param ba Bit array to query.
+ *
+ * \return inner words array.
+ */
+const uint64_t *spdk_bit_array_words(const struct spdk_bit_array *ba);
+
+/**
  * Create a bit array.
  *
  * \param num_bits Number of bits that the bit array is sized to hold.
