@@ -3879,9 +3879,10 @@ spdk_nvmf_ctrlr_abort_aer(struct spdk_nvmf_ctrlr *ctrlr)
 	ctrlr->nr_aer_reqs = 0;
 }
 
-void spdk_nvmf_ctrlr_set_cpl_error_cb(struct spdk_nvmf_ctrlr *ctrlr,
-				      spdk_nvmf_ctrlr_cpl_error_cb_fn cb_fn,
-				      void *cb_arg)
+void
+spdk_nvmf_ctrlr_set_cpl_error_cb(struct spdk_nvmf_ctrlr *ctrlr,
+				 spdk_nvmf_ctrlr_cpl_error_cb_fn cb_fn,
+				 void *cb_arg)
 {
 	ctrlr->cpl_error_cb_fn = cb_fn;
 	ctrlr->cpl_error_cb_arg = cb_arg;

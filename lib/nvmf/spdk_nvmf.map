@@ -128,6 +128,7 @@
 	spdk_nvmf_poll_group_remove;
 	spdk_nvmf_ctrlr_async_event_error_event;
 	spdk_nvmf_ctrlr_abort_aer;
+	spdk_nvmf_ctrlr_set_cpl_error_cb;
 
 	local: *;
 };
