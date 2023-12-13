@@ -1643,7 +1643,7 @@ blob_rw_verify_iov(void)
 	iov_read[1].iov_len = 4 * BLOCKLEN;
 	iov_read[2].iov_base = payload_read + 7 * BLOCKLEN;
 	iov_read[2].iov_len = 3 * BLOCKLEN;
-	spdk_blob_io_readv(blob, channel, iov_read, 3, 250, 10, blob_op_complete, NULL);
+	spdk_blob_io_readv(blob, channel, iov_read, 3, 250, 10, 0, blob_op_complete, NULL);
 	poll_threads();
 	CU_ASSERT(g_bserrno == 0);
 	CU_ASSERT(memcmp(payload_write, payload_read, 10 * BLOCKLEN) == 0);
@@ -1745,7 +1745,7 @@ blob_rw_iov_read_only(void)
 	/* Verify that reads pass if data_ro flag is set. */
 	iov_read.iov_base = payload_read;
 	iov_read.iov_len = sizeof(payload_read);
-	spdk_blob_io_readv(blob, channel, &iov_read, 1, 0, 1, blob_op_complete, NULL);
+	spdk_blob_io_readv(blob, channel, &iov_read, 1, 0, 1, 0, blob_op_complete, NULL);
 	poll_threads();
 	CU_ASSERT(g_bserrno == 0);
 
@@ -2008,7 +2008,7 @@ blob_operation_split_rw_iov(void)
 	iov_read[0].iov_len = cluster_size * 3;
 	iov_read[1].iov_base = payload_read + cluster_size * 3;
 	iov_read[1].iov_len = cluster_size * 2;
-	spdk_blob_io_readv(blob, channel, iov_read, 2, 0, io_units_per_payload, blob_op_complete, NULL);
+	spdk_blob_io_readv(blob, channel, iov_read, 2, 0, io_units_per_payload, 0, blob_op_complete, NULL);
 	poll_threads();
 	CU_ASSERT(g_bserrno == 0);
 	CU_ASSERT(spdk_mem_all_zero(payload_read, payload_size));
@@ -2029,7 +2029,7 @@ blob_operation_split_rw_iov(void)
 	iov_read[0].iov_len = cluster_size * 2;
 	iov_read[1].iov_base = payload_read + cluster_size * 2;
 	iov_read[1].iov_len = cluster_size * 3;
-	spdk_blob_io_readv(blob, channel, iov_read, 2, 0, io_units_per_payload, blob_op_complete, NULL);
+	spdk_blob_io_readv(blob, channel, iov_read, 2, 0, io_units_per_payload, 0, blob_op_complete, NULL);
 	poll_threads();
 	CU_ASSERT(g_bserrno == 0);
 	CU_ASSERT(memcmp(payload_pattern, payload_read, payload_size - io_unit_size) == 0);
@@ -2051,7 +2051,7 @@ blob_operation_split_rw_iov(void)
 	iov_read[0].iov_len = cluster_size * 4;
 	iov_read[1].iov_base = payload_read + cluster_size * 4;
 	iov_read[1].iov_len = cluster_size;
-	spdk_blob_io_readv(blob, channel, iov_read, 2, 0, io_units_per_payload, blob_op_complete, NULL);
+	spdk_blob_io_readv(blob, channel, iov_read, 2, 0, io_units_per_payload, 0, blob_op_complete, NULL);
 	poll_threads();
 	CU_ASSERT(g_bserrno == 0);
 	CU_ASSERT(memcmp(payload_pattern, payload_read + io_unit_size, payload_size - io_unit_size) == 0);
@@ -2071,7 +2071,7 @@ blob_operation_split_rw_iov(void)
 	iov_read[0].iov_len = cluster_size;
 	iov_read[1].iov_base = payload_read + cluster_size;
 	iov_read[1].iov_len = cluster_size * 4;
-	spdk_blob_io_readv(blob, channel, iov_read, 2, 0, io_units_per_payload, blob_op_complete, NULL);
+	spdk_blob_io_readv(blob, channel, iov_read, 2, 0, io_units_per_payload, 0, blob_op_complete, NULL);
 	poll_threads();
 	CU_ASSERT(g_bserrno == 0);
 	CU_ASSERT(memcmp(payload_pattern, payload_read, payload_size) == 0);
@@ -5241,7 +5241,7 @@ blob_thin_prov_rw_iov(void)
 	iov_read[1].iov_len = 4 * BLOCKLEN;
 	iov_read[2].iov_base = payload_read + 7 * BLOCKLEN;
 	iov_read[2].iov_len = 3 * BLOCKLEN;
-	spdk_blob_io_readv(blob, channel, iov_read, 3, 250, 10, blob_op_complete, NULL);
+	spdk_blob_io_readv(blob, channel, iov_read, 3, 250, 10, 0, blob_op_complete, NULL);
 	poll_threads();
 	CU_ASSERT(g_bserrno == 0);
 	CU_ASSERT(memcmp(zero, payload_read, 10 * BLOCKLEN) == 0);
@@ -5265,7 +5265,7 @@ blob_thin_prov_rw_iov(void)
 	iov_read[1].iov_len = 4 * BLOCKLEN;
 	iov_read[2].iov_base = payload_read + 7 * BLOCKLEN;
 	iov_read[2].iov_len = 3 * BLOCKLEN;
-	spdk_blob_io_readv(blob, channel, iov_read, 3, 250, 10, blob_op_complete, NULL);
+	spdk_blob_io_readv(blob, channel, iov_read, 3, 250, 10, 0, blob_op_complete, NULL);
 	poll_threads();
 	CU_ASSERT(g_bserrno == 0);
 	CU_ASSERT(memcmp(payload_write, payload_read, 10 * BLOCKLEN) == 0);
@@ -5774,7 +5774,7 @@ blob_snapshot_rw_iov(void)
 	iov_read[1].iov_len = 4 * BLOCKLEN;
 	iov_read[2].iov_base = payload_read + 7 * BLOCKLEN;
 	iov_read[2].iov_len = 3 * BLOCKLEN;
-	spdk_blob_io_readv(blob, channel, iov_read, 3, 250, 10, blob_op_complete, NULL);
+	spdk_blob_io_readv(blob, channel, iov_read, 3, 250, 10, 0, blob_op_complete, NULL);
 	poll_threads();
 	CU_ASSERT(g_bserrno == 0);
 	CU_ASSERT(memcmp(zero, payload_read, 10 * BLOCKLEN) == 0);
@@ -5798,7 +5798,7 @@ blob_snapshot_rw_iov(void)
 	iov_read[1].iov_len = 4 * BLOCKLEN;
 	iov_read[2].iov_base = payload_read + 7 * BLOCKLEN;
 	iov_read[2].iov_len = 3 * BLOCKLEN;
-	spdk_blob_io_readv(blob, channel, iov_read, 3, 250, 10, blob_op_complete, NULL);
+	spdk_blob_io_readv(blob, channel, iov_read, 3, 250, 10, 0, blob_op_complete, NULL);
 	poll_threads();
 	CU_ASSERT(g_bserrno == 0);
 	CU_ASSERT(memcmp(payload_write, payload_read, 10 * BLOCKLEN) == 0);
@@ -7737,9 +7737,10 @@ test_blob_io_readv(struct spdk_blob *blob, struct spdk_io_channel *channel,
 	if (io_opts) {
 		g_dev_readv_ext_called = false;
 		memset(&g_blob_ext_io_opts, 0, sizeof(g_blob_ext_io_opts));
-		spdk_blob_io_readv_ext(blob, channel, iov, iovcnt, offset, length, blob_op_complete, NULL, io_opts);
+		spdk_blob_io_readv_ext(blob, channel, iov, iovcnt, offset, length, 0, blob_op_complete, NULL,
+				       io_opts);
 	} else {
-		spdk_blob_io_readv(blob, channel, iov, iovcnt, offset, length, blob_op_complete, NULL);
+		spdk_blob_io_readv(blob, channel, iov, iovcnt, offset, length, 0, blob_op_complete, NULL);
 	}
 	poll_threads();
 	CU_ASSERT(g_bserrno == 0);
@@ -8818,14 +8819,14 @@ blob_esnap_verify_contents(struct spdk_blob *blob, struct spdk_io_channel *ch,
 					  bs_op_complete, NULL);
 		} else if (strcmp(how, "readv") == 0) {
 			spdk_blob_io_readv(blob, ch, &iov, 1, blob_block, blocks_per_read,
-					   bs_op_complete, NULL);
+					   0, bs_op_complete, NULL);
 		} else if (strcmp(how, "readv_ext") == 0) {
 			/*
 			 * This is currently pointless. NULL ext_opts leads to dev->readv(), not
 			 * dev->readv_ext().
 			 */
 			spdk_blob_io_readv_ext(blob, ch, &iov, 1, blob_block, blocks_per_read,
-					       bs_op_complete, NULL, NULL);
+					       0, bs_op_complete, NULL, NULL);
 		} else {
 			abort();
 		}
