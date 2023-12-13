@@ -1,3 +1,7 @@
+#  SPDX-License-Identifier: BSD-3-Clause
+#  All rights reserved.
+#
+
 name: ci
 
 on:
@@ -39,7 +43,7 @@ jobs:
 
       - name: Build
         run: |
-          ./configure --enable-werror --without-isal --enable-debug --enable-coverage --enable-asan --with-crypto
+          ./configure --enable-werror --enable-debug --enable-coverage --enable-asan --with-crypto
           make
 
       - name: Running Tests
