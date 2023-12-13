@@ -670,6 +670,24 @@ spdk_bdev_io_complete(struct spdk_bdev_io *bdev_io, enum spdk_bdev_io_status sta
 {
 	bdev_io->internal.status = status;
 }
+void
+spdk_bdev_io_complete_nvme_status(struct spdk_bdev_io *bdev_io, uint32_t cdw0, int sct, int sc)
+{
+	if (sct == SPDK_NVME_SCT_GENERIC && sc == SPDK_NVME_SC_SUCCESS) {
+		bdev_io->internal.status = SPDK_BDEV_IO_STATUS_SUCCESS;
+	} else if (sct == SPDK_NVME_SCT_GENERIC && sc == SPDK_NVME_SC_ABORTED_BY_REQUEST) {
+		bdev_io->internal.status = SPDK_BDEV_IO_STATUS_ABORTED;
+	} else {
+		bdev_io->internal.status = SPDK_BDEV_IO_STATUS_NVME_ERROR;
+	}
+
+	bdev_io->internal.error.nvme.cdw0 = cdw0;
+	bdev_io->internal.error.nvme.sct = sct;
+	bdev_io->internal.error.nvme.sc = sc;
+
+	spdk_bdev_io_complete(bdev_io, bdev_io->internal.status);
+}
+
 
 struct spdk_io_channel *spdk_lvol_get_io_channel(struct spdk_lvol *lvol)
 {
@@ -760,19 +778,20 @@ spdk_blob_io_writev_ext(struct spdk_blob *blob, struct spdk_io_channel *channel,
 
 void
 spdk_blob_io_readv(struct spdk_blob *blob, struct spdk_io_channel *channel,
-		   struct iovec *iov, int iovcnt, uint64_t offset, uint64_t length,
+		   struct iovec *iov, int iovcnt, uint64_t offset, uint64_t length, uint32_t ext_io_flags,
 		   spdk_blob_op_complete cb_fn, void *cb_arg)
 {
 	CU_ASSERT(blob == NULL);
 	CU_ASSERT(channel == g_ch);
 	CU_ASSERT(offset == g_io->u.bdev.offset_blocks);
 	CU_ASSERT(length == g_io->u.bdev.num_blocks);
+	CU_ASSERT(ext_io_flags == 0);
 	cb_fn(cb_arg, 0);
 }
 
 void
 spdk_blob_io_readv_ext(struct spdk_blob *blob, struct spdk_io_channel *channel,
-		       struct iovec *iov, int iovcnt, uint64_t offset, uint64_t length,
+		       struct iovec *iov, int iovcnt, uint64_t offset, uint64_t length, uint32_t ext_io_flags,
 		       spdk_blob_op_complete cb_fn, void *cb_arg,
 		       struct spdk_blob_ext_io_opts *io_opts)
 {
@@ -783,6 +802,7 @@ spdk_blob_io_readv_ext(struct spdk_blob *blob, struct spdk_io_channel *channel,
 	CU_ASSERT(offset == g_io->u.bdev.offset_blocks);
 	CU_ASSERT(length == g_io->u.bdev.num_blocks);
 	CU_ASSERT(io_opts == &lvol_io->ext_io_opts);
+	CU_ASSERT(ext_io_flags == 0);
 	g_ext_api_called = true;
 	cb_fn(cb_arg, 0);
 }

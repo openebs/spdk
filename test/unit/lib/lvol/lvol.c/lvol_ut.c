@@ -36,6 +36,7 @@ DEFINE_STUB(spdk_bdev_create_bs_dev_ro, int,
 	     struct spdk_bs_dev **bs_dev), -ENOTSUP);
 DEFINE_STUB(spdk_blob_is_esnap_clone, bool, (const struct spdk_blob *blob), false);
 DEFINE_STUB(spdk_blob_is_degraded, bool, (const struct spdk_blob *blob), false);
+DEFINE_STUB_V(spdk_blob_reset_used_clusters_cache, (struct spdk_blob *blob));
 
 const char *uuid = "828d9766-ae50-11e7-bd8d-001e67edf350";
 
@@ -2561,7 +2562,7 @@ lvol_esnap_load_esnaps(void)
 	lvs = lvs_alloc();
 	SPDK_CU_ASSERT_FATAL(lvs != NULL);
 	lvs->esnap_bs_dev_create = ut_esnap_bs_dev_create;
-	lvol = lvol_alloc(lvs, __func__, true, LVOL_CLEAR_WITH_DEFAULT);
+	lvol = lvol_alloc(lvs, __func__, NULL, true, LVOL_CLEAR_WITH_DEFAULT);
 	SPDK_CU_ASSERT_FATAL(lvol != NULL);
 
 	/* Handle missing bs_ctx and blob_ctx gracefully */
@@ -2668,7 +2669,7 @@ lvol_esnap_missing(void)
 	lvs->load_esnaps = true;
 
 	/* Pre-populate the lvstore with a degraded device */
-	lvol1 = lvol_alloc(lvs, name1, true, LVOL_CLEAR_WITH_DEFAULT);
+	lvol1 = lvol_alloc(lvs, name1, NULL, true, LVOL_CLEAR_WITH_DEFAULT);
 	SPDK_CU_ASSERT_FATAL(lvol1 != NULL);
 	lvol1->blob_id = blob.id;
 	TAILQ_REMOVE(&lvs->pending_lvols, lvol1, link);
@@ -2719,7 +2720,7 @@ lvol_esnap_missing(void)
 	bs_dev->destroy(bs_dev);
 
 	/* Create a missing device again */
-	lvol1 = lvol_alloc(lvs, name1, true, LVOL_CLEAR_WITH_DEFAULT);
+	lvol1 = lvol_alloc(lvs, name1, NULL, true, LVOL_CLEAR_WITH_DEFAULT);
 	SPDK_CU_ASSERT_FATAL(lvol1 != NULL);
 	lvol1->blob_id = blob.id;
 	TAILQ_REMOVE(&lvs->pending_lvols, lvol1, link);
