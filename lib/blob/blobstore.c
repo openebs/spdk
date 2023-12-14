@@ -2777,6 +2777,36 @@ blob_calculate_lba_and_lba_count(struct spdk_blob *blob, uint64_t io_unit, uint6
 	}
 }
 
+static inline bool
+blob_ancestor_calc_lba_and_lba_count(struct spdk_blob *blob, uint64_t io_unit, uint64_t length,
+				     uint64_t *lba, uint64_t *lba_count)
+{
+	struct spdk_blob *orig_blob = blob;
+
+	if (blob->parent_id == SPDK_BLOBID_INVALID) {
+		return false;
+	}
+	*lba_count = length;
+	while (blob->parent_id != SPDK_BLOBID_INVALID) {
+		spdk_blob_id blob_id = blob->parent_id;
+		blob = blob_lookup(blob->bs, blob_id);
+		if (blob == NULL) {
+			goto error;
+		} else {
+			if (!bs_io_unit_is_allocated(blob, io_unit)) {
+				continue;
+			}
+			*lba = bs_blob_io_unit_to_lba(blob, io_unit);
+			return true;
+		}
+	}
+error:
+	assert(orig_blob->back_bs_dev != NULL);
+	*lba = bs_io_unit_to_back_dev_lba(orig_blob, io_unit);
+	*lba_count = bs_io_unit_to_back_dev_lba(orig_blob, *lba_count);
+	return false;
+}
+
 struct op_split_ctx {
 	struct spdk_blob *blob;
 	struct spdk_io_channel *channel;
@@ -3239,13 +3269,13 @@ blob_request_submit_rw_iov(struct spdk_blob *blob, struct spdk_io_channel *_chan
 
 			return;
 		}
-
 		is_allocated = blob_calculate_lba_and_lba_count(blob, offset, length, &lba, &lba_count);
 
 		if (read) {
 			spdk_bs_sequence_t *seq;
 
-			if (ext_io_flags & SPDK_NVME_IO_FLAGS_UNWRITTEN_READ_FAIL) {
+			if (!is_allocated && (ext_io_flags & SPDK_NVME_IO_FLAGS_UNWRITTEN_READ_FAIL)) {
+				is_allocated = blob_ancestor_calc_lba_and_lba_count(blob, offset, length, &lba, &lba_count);
 				if (!is_allocated) {
 					/* ETXTBSY was chosen to indicate read of unwritten block.
 					 * It is not used by SPDK, so it should be fine. */
