@@ -218,5 +218,8 @@ CONFIG_SMA=n
 # Build with Avahi support
 CONFIG_AVAHI=n
 
+# Build with Rust support
+CONFIG_RUST=n
+
 # Setup DPDK's RTE_MAX_LCORES
 CONFIG_MAX_LCORES=

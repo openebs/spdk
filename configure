@@ -127,6 +127,8 @@ function usage() {
 	echo " --without-sma             No path required."
 	echo " --with-avahi              Build with Avahi mDNS discovery client service enabled in bdev-nvme module."
 	echo " --without-avahi           No path required."
+	echo " --with-rust               Build with Rust bindings, helpers and modules."
+	echo " --without-rust            No path required."
 	echo ""
 	echo "Environment variables:"
 	echo ""
@@ -653,6 +655,12 @@ for i in "$@"; do
 			;;
 		--without-avahi)
 			CONFIG[AVAHI]=n
+			;;
+		--with-rust)
+			CONFIG[RUST]=y
+			;;
+		--without-rust)
+			CONFIG[RUST]=n
 			;;
 		--max-lcores='')
 			echo "Must specify max number of lcores for --max-lcores"

@@ -32,6 +32,7 @@ CONFIG.local
 .cproject
 .settings
 .gitreview
+.idea
 mk/cc.mk
 mk/config.mk
 mk/cc.flags.mk
@@ -40,3 +41,4 @@ test_completions.txt
 timing.txt
 test/common/build_config.sh
 .coredump_path
+cmake-build-debug

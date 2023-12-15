@@ -23,6 +23,7 @@ DIRS-$(CONFIG_ISAL_CRYPTO) += isalcryptobuild
 DIRS-$(CONFIG_VFIO_USER) += vfiouserbuild
 DIRS-$(CONFIG_SMA) += proto
 DIRS-$(CONFIG_XNVME) += xnvmebuild
+DIRS-$(CONFIG_RUST) += rustbuild
 
 .PHONY: all clean $(DIRS-y) include/spdk/config.h mk/config.mk \
 	cc_version cxx_version .libs_only_other .ldflags ldflags install \
@@ -80,6 +81,11 @@ XNVMEBUILD = xnvmebuild
 LIB += xnvmebuild
 endif
 
+ifeq ($(CONFIG_RUST),y)
+RUSTBUILD = rustbuild
+LIB += rust
+endif
+
 all: mk/cc.mk $(DIRS-y)
 clean: $(DIRS-y)
 	$(Q)rm -f include/spdk/config.h
@@ -96,7 +102,12 @@ dpdkdeps $(DPDK_DEPS): $(WPDK)
 dpdkbuild: $(WPDK) $(DPDK_DEPS)
 endif
 
-lib: $(WPDK) $(DPDKBUILD) $(VFIOUSERBUILD) $(XNVMEBUILD) $(ISALBUILD) $(ISALCRYPTOBUILD)
+show:
+	@echo  "rust        " $(CONFIG_RUST)
+	@echo  "RUSTBUILD   " $(RUSTBUILD)
+	@echo  "DIRS-y      " $(DIRS-y)
+
+lib: $(WPDK) $(DPDKBUILD) $(VFIOUSERBUILD) $(XNVMEBUILD) $(ISALBUILD) $(ISALCRYPTOBUILD) $(RUSTBUILD)
 module: lib
 shared_lib: module
 app: $(LIB)

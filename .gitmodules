@@ -19,3 +19,6 @@
 [submodule "isa-l-crypto"]
 	path = isa-l-crypto
 	url = https://github.com/intel/isa-l_crypto
+[submodule "rust/spdk-rs-internal"]
+	path = rust/spdk-rs-internal
+	url = https://github.com/dsavitskiy/spdk-rs-internal.git
