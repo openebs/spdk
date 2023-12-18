@@ -1056,6 +1056,12 @@ void spdk_bs_iter_next(struct spdk_blob_store *bs, struct spdk_blob *blob,
 		       spdk_blob_op_with_handle_complete cb_fn, void *cb_arg);
 
 /**
+ * Get the current blob's parent.
+ * \param blob The current blob.
+ * \return if parent blob exist return parent blob else NULL.
+ */
+struct spdk_blob *spdk_bs_get_parent_blob(struct spdk_blob *blob);
+/**
  * Set an extended attribute for the given blob.
  *
  * \param blob Blob to set attribute.
