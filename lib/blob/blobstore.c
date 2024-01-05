@@ -3003,6 +3003,7 @@ blob_ancestor_calc_lba_and_lba_count(struct spdk_blob *blob, uint64_t io_unit, u
 	}
 	*lba_count = length;
 	while (blob->parent_id != SPDK_BLOBID_INVALID) {
+
 		uint32_t cluster_start_page = bs_io_unit_to_cluster_start(blob, io_unit);
 		bool is_valid_range = blob->back_bs_dev->is_range_valid(blob->back_bs_dev,
 				      bs_dev_io_unit_to_lba(blob, blob->back_bs_dev, cluster_start_page),
@@ -3562,13 +3563,13 @@ blob_request_submit_rw_iov(struct spdk_blob *blob, struct spdk_io_channel *_chan
 
 			return;
 		}
-
 		is_allocated = blob_calculate_lba_and_lba_count(blob, offset, length, &lba, &lba_count);
 
 		if (read) {
 			spdk_bs_sequence_t *seq;
 
-			if (ext_io_flags & SPDK_NVME_IO_FLAGS_UNWRITTEN_READ_FAIL) {
+			if (!is_allocated && (ext_io_flags & SPDK_NVME_IO_FLAGS_UNWRITTEN_READ_FAIL)) {
+				is_allocated = blob_ancestor_calc_lba_and_lba_count(blob, offset, length, &lba, &lba_count);
 				if (!is_allocated) {
 					/* ETXTBSY was chosen to indicate read of unwritten block.
 					 * It is not used by SPDK, so it should be fine. */
