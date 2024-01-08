@@ -9521,6 +9521,22 @@ spdk_bs_iter_next(struct spdk_blob_store *bs, struct spdk_blob *blob,
 	spdk_blob_close(blob, bs_iter_close_cpl, ctx);
 }
 
+struct spdk_blob *spdk_bs_get_parent_blob(struct spdk_blob *blob)
+{
+	spdk_blob_id blob_id;
+	struct spdk_blob *parent_blob;
+
+	assert(blob != NULL);
+
+	if (blob->parent_id == SPDK_BLOBID_INVALID) {
+		return NULL;
+	}
+
+	blob_id = blob->parent_id;
+	parent_blob = blob_lookup(blob->bs, blob_id);
+
+	return parent_blob;
+}
 static int
 blob_set_xattr(struct spdk_blob *blob, const char *name, const void *value,
 	       uint16_t value_len, bool internal)
