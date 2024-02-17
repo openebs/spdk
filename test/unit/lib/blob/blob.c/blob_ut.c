@@ -1643,7 +1643,7 @@ bs_channel_get_req_count(struct spdk_io_channel *_channel)
 	struct spdk_bs_request_set *set;
 	uint32_t count = 0;
 
-	TAILQ_FOREACH(set, &channel->reqs, link) {
+	TAILQ_FOREACH(set, &channel->req_pool.reqs, link) {
 		count++;
 	}
 
