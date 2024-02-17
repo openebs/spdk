@@ -3402,29 +3402,17 @@ bs_channel_create(void *io_device, void *ctx_buf)
 	struct spdk_blob_store		*bs = io_device;
 	struct spdk_bs_channel		*channel = ctx_buf;
 	struct spdk_bs_dev		*dev;
-	uint32_t			max_ops = bs->max_channel_ops;
-	uint32_t			i;
 
 	dev = bs->dev;
 
-	channel->req_mem = calloc(max_ops, sizeof(struct spdk_bs_request_set));
-	if (!channel->req_mem) {
-		return -1;
-	}
-
-	TAILQ_INIT(&channel->reqs);
-
-	for (i = 0; i < max_ops; i++) {
-		TAILQ_INSERT_TAIL(&channel->reqs, &channel->req_mem[i], link);
-	}
-
 	channel->bs = bs;
 	channel->dev = dev;
+	bs_request_set_pool_init(&channel->req_pool);
 	channel->dev_channel = dev->create_channel(dev);
 
 	if (!channel->dev_channel) {
 		SPDK_ERRLOG("Failed to create device channel.\n");
-		free(channel->req_mem);
+		bs_request_set_pool_free(&channel->req_pool);
 		return -1;
 	}
 
@@ -3432,7 +3420,7 @@ bs_channel_create(void *io_device, void *ctx_buf)
 				    SPDK_MALLOC_DMA);
 	if (!channel->new_cluster_page) {
 		SPDK_ERRLOG("Failed to allocate new cluster page\n");
-		free(channel->req_mem);
+		bs_request_set_pool_free(&channel->req_pool);
 		channel->dev->destroy_channel(channel->dev, channel->dev_channel);
 		return -1;
 	}
@@ -3464,7 +3452,7 @@ bs_channel_destroy(void *io_device, void *ctx_buf)
 
 	blob_esnap_destroy_bs_channel(channel);
 
-	free(channel->req_mem);
+	bs_request_set_pool_free(&channel->req_pool);
 	spdk_free(channel->new_cluster_page);
 	channel->dev->destroy_channel(channel->dev, channel->dev_channel);
 }

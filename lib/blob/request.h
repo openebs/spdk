@@ -127,6 +127,16 @@ struct spdk_bs_request_set {
 	TAILQ_ENTRY(spdk_bs_request_set) link;
 };
 
+/* A pool of pre-allocated requested sets. */
+struct spdk_bs_request_set_pool {
+	struct spdk_bs_request_set		**req_mem;
+	TAILQ_HEAD(, spdk_bs_request_set)	reqs;
+};
+
+void bs_request_set_pool_init(struct spdk_bs_request_set_pool *req_pool);
+
+void bs_request_set_pool_free(struct spdk_bs_request_set_pool *req_pool);
+
 void bs_call_cpl(struct spdk_bs_cpl *cpl, int bserrno);
 
 spdk_bs_sequence_t *bs_sequence_start_bs(struct spdk_io_channel *channel,

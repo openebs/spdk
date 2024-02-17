@@ -15,6 +15,105 @@
 #include "spdk/log.h"
 
 void
+bs_request_set_pool_init(struct spdk_bs_request_set_pool *req_pool)
+{
+	req_pool->req_mem = NULL;
+	TAILQ_INIT(&req_pool->reqs);
+}
+
+void
+bs_request_set_pool_free(struct spdk_bs_request_set_pool *req_pool)
+{
+	struct spdk_bs_request_set **ps = req_pool->req_mem;
+
+	if (ps != NULL) {
+		while (*ps != NULL) {
+			free(*ps);
+			++ps;
+		}
+		free(req_pool->req_mem);
+		req_pool->req_mem = NULL;
+	}
+}
+
+static int
+bs_request_set_pool_grow(struct spdk_bs_request_set_pool *req_pool,
+			 uint32_t max_ops)
+{
+	struct spdk_bs_request_set	**ps;
+	struct spdk_bs_request_set	*new_set;
+	uint32_t			i;
+
+	/* Allocate a new chunk of spdk_bs_request_set elements */
+	new_set = calloc(max_ops, sizeof(struct spdk_bs_request_set));
+	if (!new_set) {
+		return -ENOMEM;
+	}
+
+	/* Count the number of existing chunks and grow it by 1 */
+	i = 0;
+	if (req_pool->req_mem != NULL) {
+		ps = req_pool->req_mem;
+		while (*ps++ != NULL) {
+			++i;
+		}
+	}
+	++i;
+
+	ps = realloc(req_pool->req_mem, (i + 1) * sizeof(struct spdk_bs_request_set *));
+	if (!ps) {
+		free(new_set);
+		return -ENOMEM;
+	}
+	ps[i - 1] = new_set;
+	ps[i] = NULL;		/* Final NULL element indicates end of the list */
+	req_pool->req_mem = ps;
+
+	/* Append the elements from the new chunk to the list of free requests */
+	for (i = 0; i < max_ops; i++) {
+		TAILQ_INSERT_TAIL(&req_pool->reqs, &new_set[i], link);
+	}
+
+	return 0;
+}
+
+static struct spdk_bs_request_set *
+bs_request_set_alloc(struct spdk_bs_channel *channel, struct spdk_bs_cpl *cpl,
+		     struct spdk_io_channel *back_channel)
+{
+	struct spdk_bs_request_set *set = NULL;
+
+	if (channel->req_pool.req_mem != NULL) {
+		set = TAILQ_FIRST(&channel->req_pool.reqs);
+	}
+
+	if (!set) {
+		if (bs_request_set_pool_grow(&channel->req_pool,
+					     channel->bs->max_channel_ops) < 0) {
+			SPDK_ERRLOG("Failed to allocate per-channel request set pool\n");
+			return NULL;
+		}
+	}
+
+	set = TAILQ_FIRST(&channel->req_pool.reqs);
+	assert(set);
+	TAILQ_REMOVE(&channel->req_pool.reqs, set, link);
+
+	set->cpl = *cpl;
+	set->bserrno = 0;
+	set->channel = channel;
+	set->back_channel = back_channel;
+
+	return set;
+}
+
+static inline void
+bs_request_set_dealloc(struct spdk_bs_request_set *set)
+{
+	TAILQ_INSERT_TAIL(&set->channel->req_pool.reqs, set, link);
+}
+
+void
 bs_call_cpl(struct spdk_bs_cpl *cpl, int bserrno)
 {
 	switch (cpl->type) {
@@ -58,8 +157,7 @@ bs_request_set_complete(struct spdk_bs_request_set *set)
 	struct spdk_bs_cpl cpl = set->cpl;
 	int bserrno = set->bserrno;
 
-	TAILQ_INSERT_TAIL(&set->channel->reqs, set, link);
-
+	bs_request_set_dealloc(set);
 	bs_call_cpl(&cpl, bserrno);
 }
 
@@ -81,16 +179,11 @@ bs_sequence_start(struct spdk_io_channel *_channel, struct spdk_bs_cpl *cpl,
 
 	channel = spdk_io_channel_get_ctx(_channel);
 	assert(channel != NULL);
-	set = TAILQ_FIRST(&channel->reqs);
+
+	set = bs_request_set_alloc(channel, cpl, back_channel);
 	if (!set) {
 		return NULL;
 	}
-	TAILQ_REMOVE(&channel->reqs, set, link);
-
-	set->cpl = *cpl;
-	set->bserrno = 0;
-	set->channel = channel;
-	set->back_channel = back_channel;
 
 	set->cb_args.cb_fn = bs_sequence_completion;
 	set->cb_args.cb_arg = set;
@@ -340,16 +433,11 @@ bs_batch_open(struct spdk_io_channel *_channel, struct spdk_bs_cpl *cpl, struct 
 
 	channel = spdk_io_channel_get_ctx(_channel);
 	assert(channel != NULL);
-	set = TAILQ_FIRST(&channel->reqs);
+
+	set = bs_request_set_alloc(channel, cpl, back_channel);
 	if (!set) {
 		return NULL;
 	}
-	TAILQ_REMOVE(&channel->reqs, set, link);
-
-	set->cpl = *cpl;
-	set->bserrno = 0;
-	set->channel = channel;
-	set->back_channel = back_channel;
 
 	set->u.batch.cb_fn = NULL;
 	set->u.batch.cb_arg = NULL;
@@ -477,15 +565,11 @@ bs_user_op_alloc(struct spdk_io_channel *_channel, struct spdk_bs_cpl *cpl,
 
 	channel = spdk_io_channel_get_ctx(_channel);
 	assert(channel != NULL);
-	set = TAILQ_FIRST(&channel->reqs);
+
+	set = bs_request_set_alloc(channel, cpl, NULL);
 	if (!set) {
 		return NULL;
 	}
-	TAILQ_REMOVE(&channel->reqs, set, link);
-
-	set->cpl = *cpl;
-	set->channel = channel;
-	set->back_channel = NULL;
 	set->ext_io_opts = NULL;
 
 	args = &set->u.user_op;
@@ -541,7 +625,7 @@ bs_user_op_execute(spdk_bs_user_op_t *op)
 					set->ext_io_opts);
 		break;
 	}
-	TAILQ_INSERT_TAIL(&set->channel->reqs, set, link);
+	bs_request_set_dealloc(set);
 }
 
 void
@@ -552,7 +636,7 @@ bs_user_op_abort(spdk_bs_user_op_t *op, int bserrno)
 	set = (struct spdk_bs_request_set *)op;
 
 	set->cpl.u.blob_basic.cb_fn(set->cpl.u.blob_basic.cb_arg, bserrno);
-	TAILQ_INSERT_TAIL(&set->channel->reqs, set, link);
+	bs_request_set_dealloc(set);
 }
 
 SPDK_LOG_REGISTER_COMPONENT(blob_rw)
