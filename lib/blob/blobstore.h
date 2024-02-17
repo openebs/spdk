@@ -203,8 +203,7 @@ struct spdk_blob_store {
 };
 
 struct spdk_bs_channel {
-	struct spdk_bs_request_set	*req_mem;
-	TAILQ_HEAD(, spdk_bs_request_set) reqs;
+	struct spdk_bs_request_set_pool	req_pool;
 
 	struct spdk_blob_store		*bs;
 
