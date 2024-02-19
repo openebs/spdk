@@ -1736,12 +1736,35 @@ vbdev_lvs_examine_config(struct spdk_bdev *bdev)
 	spdk_bdev_module_examine_done(&g_lvol_if);
 }
 
+static void _vbdev_lvs_open_next_lvol(struct spdk_lvol *lvol, void *cb_arg);
+
+static void
+_vbdev_lvs_open_next_lvol_cb(void *cb_arg, struct spdk_lvol *lvol, int lvolerrno)
+{
+	struct spdk_lvol *next_lvol = TAILQ_NEXT(lvol, link);
+
+	if (lvolerrno != 0) {
+		SPDK_ERRLOG("Failed to open lvol %s (blob 0x%" PRIx64 ")\n", lvol->name, lvol->blob_id);
+	}
+
+	_vbdev_lvs_examine_finish(cb_arg, lvol, lvolerrno);
+
+	if (next_lvol) {
+		_vbdev_lvs_open_next_lvol(next_lvol, cb_arg);
+	}
+}
+
+static void
+_vbdev_lvs_open_next_lvol(struct spdk_lvol *lvol, void *cb_arg)
+{
+	spdk_lvol_open(lvol, _vbdev_lvs_open_next_lvol_cb, cb_arg);
+}
+
 static void
 _vbdev_lvs_examine_cb(void *arg, struct spdk_lvol_store *lvol_store, int lvserrno)
 {
 	struct lvol_store_bdev *lvs_bdev;
 	struct spdk_lvs_with_handle_req *req = (struct spdk_lvs_with_handle_req *)arg;
-	struct spdk_lvol *lvol, *tmp;
 	struct spdk_lvs_req *ori_req = req->cb_arg;
 
 	if (lvserrno == -EEXIST) {
@@ -1791,9 +1814,7 @@ _vbdev_lvs_examine_cb(void *arg, struct spdk_lvol_store *lvol_store, int lvserrn
 		_vbdev_lvs_examine_done(ori_req, 0);
 	} else {
 		/* Open all lvols */
-		TAILQ_FOREACH_SAFE(lvol, &lvol_store->lvols, link, tmp) {
-			spdk_lvol_open(lvol, _vbdev_lvs_examine_finish, ori_req);
-		}
+		_vbdev_lvs_open_next_lvol(TAILQ_FIRST(&lvol_store->lvols), ori_req);
 	}
 
 end:
