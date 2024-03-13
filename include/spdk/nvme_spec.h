@@ -4355,6 +4355,9 @@ SPDK_STATIC_ASSERT(sizeof(struct spdk_nvme_ns_streams_status) == 131072, "Incorr
 /** When set, reading of unwritten or deallocated block of a thin-provisioned device will fail
  * with SPDK_NVME_SC_DEALLOCATED_OR_UNWRITTEN_BLOCK */
 #define SPDK_NVME_IO_FLAGS_UNWRITTEN_READ_FAIL (4U << 20)
+/** When set, check for allocated blocks from current blob, rather checking from
+ * complete blob chain while doing read */
+#define SPDK_NVME_IO_FLAG_CURRENT_UNWRITTEN_READ_FAIL (4U << 19)
 /** Zone append specific, determines the contents of the reference tag written to the media */
 #define SPDK_NVME_IO_FLAGS_ZONE_APPEND_PIREMAP (1U << 25)
 /** Enable protection information checking of the Logical Block Reference Tag field */
