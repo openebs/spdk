@@ -3544,6 +3544,10 @@ blob_request_submit_rw_iov(struct spdk_blob *blob, struct spdk_io_channel *_chan
 		if (read) {
 			spdk_bs_sequence_t *seq;
 
+			if (!is_allocated && (ext_io_flags & SPDK_NVME_IO_FLAG_CURRENT_UNWRITTEN_READ_FAIL)) {
+				cb_fn(cb_arg, -ETXTBSY);
+				return;
+			}
 			if (!is_allocated && (ext_io_flags & SPDK_NVME_IO_FLAGS_UNWRITTEN_READ_FAIL)) {
 				is_allocated = blob_ancestor_calc_lba_and_lba_count(blob, offset, length, &lba, &lba_count);
 				if (!is_allocated) {
