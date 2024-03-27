@@ -3301,7 +3301,7 @@ nvmf_tcp_req_complete(struct spdk_nvmf_request *req)
 		break;
 	}
 
-	nvmf_tcp_req_process(ttransport, tcp_req);
+	//nvmf_tcp_req_process(ttransport, tcp_req);
 
 	return 0;
 }
