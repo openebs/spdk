@@ -27,7 +27,7 @@
 
 #define NVMF_CTRLR_RESET_SHN_TIMEOUT_IN_MS	(NVMF_CC_RESET_SHN_TIMEOUT_IN_MS + 5000)
 
-#define DUPLICATE_QID_RETRY_US 1000
+#define DUPLICATE_QID_RETRY_US 10000
 
 /*
  * Report the SPDK version as the firmware revision.
@@ -299,16 +299,16 @@ nvmf_ctrlr_add_qpair(struct spdk_nvmf_qpair *qpair,
 
 	if (spdk_bit_array_get(ctrlr->qpair_mask, qpair->qid)) {
 		if (qpair->connect_req != NULL) {
-			SPDK_ERRLOG("Got I/O connect with duplicate QID %u (cntlid:%u)\n",
-				    qpair->qid, ctrlr->cntlid);
+			SPDK_ERRLOG("Got I/O connect with duplicate QID %u on ctrlr %p [%s]\n",
+				    qpair->qid, ctrlr, ctrlr->hostnqn);
 			rsp->status.sct = SPDK_NVME_SCT_COMMAND_SPECIFIC;
 			rsp->status.sc = SPDK_NVME_SC_INVALID_QUEUE_IDENTIFIER;
 			qpair->connect_req = NULL;
 			qpair->ctrlr = NULL;
 			spdk_nvmf_request_complete(req);
 		} else {
-			SPDK_WARNLOG("Duplicate QID detected (cntlid:%u, qid:%u), re-check in %dus\n",
-				     ctrlr->cntlid, qpair->qid, DUPLICATE_QID_RETRY_US);
+			SPDK_WARNLOG("Duplicate QID %u detected on ctrlr %p [%s], re-check in %dus\n",
+				     qpair->qid, ctrlr, ctrlr->hostnqn, DUPLICATE_QID_RETRY_US);
 			qpair->connect_req = req;
 			/* Set qpair->ctrlr here so that we'll have it when the poller expires. */
 			nvmf_qpair_set_ctrlr(qpair, ctrlr);
@@ -318,7 +318,14 @@ nvmf_ctrlr_add_qpair(struct spdk_nvmf_qpair *qpair,
 		return;
 	}
 
-	qpair->connect_req = NULL;
+	/* Reset `connect_req` after a retry.
+	 * (Note it shares the union with `first_fused_req`).
+	 */
+	if (qpair->connect_req != NULL) {
+		SPDK_WARNLOG("Added QID %u on ctrlr %p [%s] after duplicate QID retry\n",
+			     qpair->qid, ctrlr, ctrlr->hostnqn);
+		qpair->connect_req = NULL;
+	}
 
 	SPDK_DTRACE_PROBE4_TICKS(nvmf_ctrlr_add_qpair, qpair, qpair->qid, ctrlr->subsys->subnqn,
 				 ctrlr->hostnqn);
