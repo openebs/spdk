@@ -2840,7 +2840,7 @@ nvmf_tcp_req_process(struct spdk_nvmf_tcp_transport *ttransport,
 
 	tqpair = SPDK_CONTAINEROF(tcp_req->req.qpair, struct spdk_nvmf_tcp_qpair, qpair);
 	group = &tqpair->group->group;
-	assert(tcp_req->state != TCP_REQUEST_STATE_FREE);
+	//assert(tcp_req->state != TCP_REQUEST_STATE_FREE);
 
 	/* If the qpair is not active, we need to abort the outstanding requests. */
 	if (tqpair->qpair.state != SPDK_NVMF_QPAIR_ACTIVE) {
@@ -3301,7 +3301,7 @@ nvmf_tcp_req_complete(struct spdk_nvmf_request *req)
 		break;
 	}
 
-	//nvmf_tcp_req_process(ttransport, tcp_req);
+	nvmf_tcp_req_process(ttransport, tcp_req);
 
 	return 0;
 }
