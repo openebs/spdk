@@ -31,7 +31,7 @@
 
 #define NVMF_CTRLR_RESET_SHN_TIMEOUT_IN_MS	(NVMF_CC_RESET_SHN_TIMEOUT_IN_MS + 5000)
 
-#define DUPLICATE_QID_RETRY_US 1000
+#define DUPLICATE_QID_RETRY_US 10000
 
 /*
  * Report the SPDK version as the firmware revision.
@@ -302,15 +302,16 @@ nvmf_ctrlr_add_qpair(struct spdk_nvmf_qpair *qpair,
 
 	if (spdk_bit_array_get(ctrlr->qpair_mask, qpair->qid)) {
 		if (qpair->connect_req != NULL) {
-			SPDK_ERRLOG("Got I/O connect with duplicate QID %u\n", qpair->qid);
+			SPDK_ERRLOG("Got I/O connect with duplicate QID %u on ctrlr %p [%s]\n",
+				    qpair->qid, ctrlr, ctrlr->hostnqn);
 			rsp->status.sct = SPDK_NVME_SCT_COMMAND_SPECIFIC;
 			rsp->status.sc = SPDK_NVME_SC_INVALID_QUEUE_IDENTIFIER;
 			qpair->connect_req = NULL;
 			qpair->ctrlr = NULL;
 			spdk_nvmf_request_complete(req);
 		} else {
-			SPDK_WARNLOG("Duplicate QID detected, re-check in %dus\n",
-				     DUPLICATE_QID_RETRY_US);
+			SPDK_WARNLOG("Duplicate QID %u detected on ctrlr %p [%s], re-check in %dus\n",
+				     qpair->qid, ctrlr, ctrlr->hostnqn, DUPLICATE_QID_RETRY_US);
 			qpair->connect_req = req;
 			/* Set qpair->ctrlr here so that we'll have it when the poller expires. */
 			nvmf_qpair_set_ctrlr(qpair, ctrlr);
@@ -318,6 +319,15 @@ nvmf_ctrlr_add_qpair(struct spdk_nvmf_qpair *qpair,
 							   DUPLICATE_QID_RETRY_US);
 		}
 		return;
+	}
+
+	/* Reset `connect_req` after a retry.
+	 * (Note it shares the union with `first_fused_req`).
+	 */
+	if (qpair->connect_req != NULL) {
+		SPDK_WARNLOG("Added QID %u on ctrlr %p [%s] after duplicate QID retry\n",
+			     qpair->qid, ctrlr, ctrlr->hostnqn);
+		qpair->connect_req = NULL;
 	}
 
 	SPDK_DTRACE_PROBE4_TICKS(nvmf_ctrlr_add_qpair, qpair, qpair->qid, ctrlr->subsys->subnqn,
@@ -4409,7 +4419,8 @@ nvmf_ctrlr_process_io_cmd(struct spdk_nvmf_request *req)
 	} else if (spdk_unlikely(req->qpair->first_fused_req != NULL)) {
 		struct spdk_nvme_cpl *fused_response = &req->qpair->first_fused_req->rsp->nvme_cpl;
 
-		SPDK_ERRLOG("Expected second of fused commands - failing first of fused commands\n");
+		SPDK_ERRLOG("Ctrlr %p [%s]: Expected second of fused commands - failing first of fused commands: qpair id %u\n",
+			    req->qpair->ctrlr, req->qpair->ctrlr ? req->qpair->ctrlr->hostnqn : "<null>", req->qpair->qid);
 
 		/* abort req->qpair->first_fused_request and continue with new command */
 		fused_response->status.sc = SPDK_NVME_SC_ABORTED_MISSING_FUSED;
