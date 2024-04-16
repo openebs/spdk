@@ -728,8 +728,9 @@ if [ -z "${CONFIG[ENV]}" ]; then
 			CONFIG[DPDK_DIR]="${rootdir}/dpdk/build"
 			# Default ipsec libs
 			if [[ "${CONFIG[CRYPTO]}" = "y" ]] && [[ $arch = x86_64* ]]; then
-				CONFIG[IPSEC_MB]=y
-				CONFIG[IPSEC_MB_DIR]="${rootdir}/intel-ipsec-mb/lib"
+				# CONFIG[IPSEC_MB]=y
+				# CONFIG[IPSEC_MB_DIR]="${rootdir}/intel-ipsec-mb/lib"
+				echo "CRYPTO is enabled, but we don't want IPSEC_MB"
 			fi
 			echo "Using default DPDK in ${CONFIG[DPDK_DIR]}"
 		fi
@@ -1329,5 +1330,6 @@ if [[ $sys_name == "FreeBSD" ]]; then
 else
 	echo "Type 'make' to build."
 fi
+echo "IPSEC_MB enabled: ${CONFIG[IPSEC_MB]}"
 
 exit 0

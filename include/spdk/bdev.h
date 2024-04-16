@@ -2154,6 +2154,8 @@ bdev_unlock_lba_range(struct spdk_bdev_desc *desc, struct spdk_io_channel *_ch,
 		      uint64_t offset, uint64_t length,
 		      lock_range_cb cb_fn, void *cb_arg);
 
+int spdk_create_crypto_bdev(const char *name, const char *base_bdev_name, struct spdk_accel_crypto_key_create_param* key_create_param);
+
 #ifdef __cplusplus
 }
 #endif
