@@ -673,6 +673,7 @@ ublk_create_target(const char *cpumask_str)
 	uint32_t i;
 	char thread_name[32];
 	struct ublk_poll_group *poll_group;
+	struct spdk_cpuset tmp_cpumask = {};
 
 	if (g_ublk_tgt.active == true) {
 		SPDK_ERRLOG("UBLK target has been created\n");
@@ -704,9 +705,12 @@ ublk_create_target(const char *cpumask_str)
 		if (!spdk_cpuset_get_cpu(&g_core_mask, i)) {
 			continue;
 		}
+		/* Current mayastor scheduler does not automatically spread */
+		spdk_cpuset_zero(&tmp_cpumask);
+		spdk_cpuset_set_cpu(&tmp_cpumask, i, true);
 		snprintf(thread_name, sizeof(thread_name), "ublk_thread%u", i);
 		poll_group = &g_ublk_tgt.poll_groups[g_num_ublk_poll_groups];
-		poll_group->ublk_thread = spdk_thread_create(thread_name, &g_core_mask);
+		poll_group->ublk_thread = spdk_thread_create(thread_name, &tmp_cpumask);
 		spdk_thread_send_msg(poll_group->ublk_thread, ublk_poller_register, poll_group);
 		g_num_ublk_poll_groups++;
 	}
