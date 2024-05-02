@@ -6477,10 +6477,12 @@ bs_create_blob(struct spdk_blob_store *bs,
 	spdk_spin_lock(&bs->used_lock);
 	page_idx = spdk_bit_array_find_first_clear(bs->used_md_pages, 0);
 	if (page_idx == UINT32_MAX) {
+		SPDK_ERRLOG("Failed to allocate metadata for a new blob\n");
 		spdk_spin_unlock(&bs->used_lock);
-		cb_fn(cb_arg, 0, -ENOMEM);
+		cb_fn(cb_arg, 0, -EMFILE);
 		return;
 	}
+
 	spdk_bit_array_set(bs->used_blobids, page_idx);
 	bs_claim_md_page(bs, page_idx);
 	spdk_spin_unlock(&bs->used_lock);
