@@ -2846,6 +2846,14 @@ blob_ancestor_calc_lba_and_lba_count(struct spdk_blob *blob, uint64_t io_unit, u
 	}
 	*lba_count = length;
 	while (blob->parent_id != SPDK_BLOBID_INVALID) {
+		uint32_t cluster_start_page = bs_io_unit_to_cluster_start(blob, io_unit);
+		bool is_valid_range = blob->back_bs_dev->is_range_valid(blob->back_bs_dev,
+				      bs_dev_page_to_lba(blob->back_bs_dev, cluster_start_page),
+				      bs_dev_byte_to_lba(blob->back_bs_dev, blob->bs->cluster_sz));
+		if (!is_valid_range) {
+			goto error;
+		}
+
 		spdk_blob_id blob_id = blob->parent_id;
 		blob = blob_lookup(blob->bs, blob_id);
 		if (blob == NULL) {
