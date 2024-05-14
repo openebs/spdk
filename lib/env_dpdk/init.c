@@ -716,3 +716,9 @@ spdk_env_dpdk_external_init(void)
 {
 	return g_external_init;
 }
+
+int
+spdk_env_dpdk_rte_eal_init(int argc, char **argv)
+{
+	return rte_eal_init(argc, argv);
+}
