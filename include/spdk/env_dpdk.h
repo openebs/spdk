@@ -45,6 +45,12 @@ void spdk_env_dpdk_post_fini(void);
 bool spdk_env_dpdk_external_init(void);
 
 /**
+ * Initialize the Environment Abstraction Layer (EAL).
+ * See documentation for `rte_eal_init` for details.
+ */
+int spdk_env_dpdk_rte_eal_init(int argc, char **argv);
+
+/**
  * Dump the env allocated memory to the given file.
  *
  * \param file The file object to write to.
