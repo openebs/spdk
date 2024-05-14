@@ -120,6 +120,7 @@
 	spdk_env_dpdk_post_init;
 	spdk_env_dpdk_post_fini;
 	spdk_env_dpdk_external_init;
+	spdk_env_dpdk_rte_eal_init;
 	spdk_env_dpdk_dump_mem_stats;
 
 	local: *;
