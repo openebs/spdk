@@ -228,6 +228,7 @@ SPDK_STATIC_ASSERT(sizeof(union spdk_bdev_nvme_ctratt) == 4, "Incorrect size");
  * This is used to pass NVMe specific fields to bdevs, that reports support for them as indicated
  * by \ref spdk_bdev_get_nvme_ctratt
  */
+#pragma pack(push, 1)
 union spdk_bdev_nvme_cdw12 {
 	uint32_t raw;
 
@@ -239,12 +240,14 @@ union spdk_bdev_nvme_cdw12 {
 	} write;
 };
 SPDK_STATIC_ASSERT(sizeof(union spdk_bdev_nvme_cdw12) == 4, "Incorrect size");
+#pragma pack(pop)
 
 /**
  * Union for command dword 13, which by convention matches the NVMe command dword 13 definition.
  * This is used to pass NVMe specific fields to bdevs, that reports support for them as indicated
  * by \ref spdk_bdev_get_nvme_ctratt
  */
+#pragma pack(push, 1)
 union spdk_bdev_nvme_cdw13 {
 	uint32_t raw;
 
@@ -255,6 +258,7 @@ union spdk_bdev_nvme_cdw13 {
 	} write;
 };
 SPDK_STATIC_ASSERT(sizeof(union spdk_bdev_nvme_cdw13) == 4, "Incorrect size");
+#pragma pack(pop)
 
 /**
  * Structure with optional IO request parameters
