@@ -956,8 +956,9 @@ spdk_app_start(struct spdk_app_opts *opts_user, spdk_msg_fn start_fn,
 			return 1;
 		}
 
-		g_spdk_app.json_data = spdk_posix_file_load_from_name(opts->json_config_file,
-				       &g_spdk_app.json_data_size);
+		spdk_posix_file_load_from_name(opts->json_config_file,
+					       &g_spdk_app.json_data_size,
+					       &g_spdk_app.json_data);
 		if (!g_spdk_app.json_data) {
 			SPDK_ERRLOG("Read JSON configuration file %s failed: %s\n",
 				    opts->json_config_file, spdk_strerror(errno));

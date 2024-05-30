@@ -31,10 +31,12 @@ void *spdk_posix_file_load(FILE *file, size_t *size);
  *
  * \param file_name File name.
  * \param size Size of bytes read from the file.
+ * \param file_data Pointer to write a pointer to the data containing the content on success, or
+ * NULL is written on failure.
  *
- * \return data containing the content on success, NULL on failure.
+ * \return 0 on success, negative errno error code on failure.
  */
-void *spdk_posix_file_load_from_name(const char *file_name, size_t *size);
+int spdk_posix_file_load_from_name(const char *file_name, size_t *size, void **file_data);
 
 #ifdef __cplusplus
 }
