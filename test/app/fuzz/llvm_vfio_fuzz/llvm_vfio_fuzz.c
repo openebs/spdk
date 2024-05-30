@@ -590,7 +590,7 @@ vfio_fuzz_parse(int ch, char *arg)
 		}
 		break;
 	case 'N':
-		g_repro_data = spdk_posix_file_load_from_name(optarg, &g_repro_size);
+		spdk_posix_file_load_from_name(optarg, &g_repro_size, &g_repro_data);
 		if (g_repro_data == NULL) {
 			fprintf(stderr, "could not load data for file %s\n", optarg);
 			return -1;
