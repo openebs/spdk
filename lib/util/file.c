@@ -42,18 +42,24 @@ spdk_posix_file_load(FILE *file, size_t *size)
 	return NULL;
 }
 
-void *
-spdk_posix_file_load_from_name(const char *file_name, size_t *size)
+int
+spdk_posix_file_load_from_name(const char *file_name, size_t *size, void **file_data)
 {
 	FILE *file = fopen(file_name, "r");
-	void *data;
+
+	assert(file_data);
 
 	if (file == NULL) {
-		return NULL;
+		*file_data = NULL;
+		return -errno;
 	}
 
-	data = spdk_posix_file_load(file, size);
+	*file_data = spdk_posix_file_load(file, size);
 	fclose(file);
 
-	return data;
+	if (*file_data) {
+		return 0;
+	} else {
+		return -ENOMEM;
+	}
 }

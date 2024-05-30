@@ -2538,6 +2538,7 @@ static int
 nvmf_ns_reservation_load_json(const struct spdk_nvmf_ns *ns,
 			      struct spdk_nvmf_reservation_info *info)
 {
+	int err;
 	size_t json_size;
 	ssize_t values_cnt, rc;
 	void *json = NULL, *end;
@@ -2547,10 +2548,17 @@ nvmf_ns_reservation_load_json(const struct spdk_nvmf_ns *ns,
 	uint32_t i;
 
 	/* Load all persist file contents into a local buffer */
-	json = spdk_posix_file_load_from_name(file, &json_size);
+	err = spdk_posix_file_load_from_name(file, &json_size, &json);
+
+	/* It's not an error if the file does not exist */
+	if (err == -ENOENT) {
+		SPDK_NOTICELOG("Persist file %s does not exist\n", file);
+		return 0;
+	}
+
 	if (!json) {
-		SPDK_ERRLOG("Load persit file %s failed\n", file);
-		return -ENOMEM;
+		SPDK_ERRLOG("Load persist file %s failed: %s\n", file, strerror(-err));
+		return err;
 	}
 
 	rc = spdk_json_parse(json, json_size, NULL, 0, &end, 0);
