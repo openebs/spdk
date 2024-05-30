@@ -105,7 +105,7 @@ read_json_into_buffer(const char *filename, struct spdk_json_val **values, void 
 	size_t file_data_size;
 	ssize_t num_json_values = 0, rc;
 
-	*file_data = spdk_posix_file_load_from_name(filename, &file_data_size);
+	spdk_posix_file_load_from_name(filename, &file_data_size, file_data);
 	if (*file_data == NULL) {
 		return 0;
 	}
