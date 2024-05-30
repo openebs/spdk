@@ -660,7 +660,7 @@ spdk_subsystem_init_from_json_config(const char *json_config_file, const char *r
 
 	assert(cb_fn);
 
-	json = spdk_posix_file_load_from_name(json_config_file, &json_size);
+	spdk_posix_file_load_from_name(json_config_file, &json_size, (void **)&json);
 	if (!json) {
 		SPDK_ERRLOG("Could not read JSON config file\n");
 		cb_fn(-EINVAL, cb_arg);
