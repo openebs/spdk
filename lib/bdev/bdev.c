@@ -5119,6 +5119,13 @@ _resize_notify(void *ctx)
 int
 spdk_bdev_notify_blockcnt_change(struct spdk_bdev *bdev, uint64_t size)
 {
+	return spdk_bdev_resize(bdev, size, NULL, NULL);
+}
+
+int
+spdk_bdev_resize(struct spdk_bdev *bdev, uint64_t size,
+		 spdk_resize_cb resize_cb, void *cb_arg)
+{
 	struct spdk_bdev_desc *desc;
 	int ret;
 
@@ -5132,8 +5139,18 @@ spdk_bdev_notify_blockcnt_change(struct spdk_bdev *bdev, uint64_t size)
 	if (!TAILQ_EMPTY(&bdev->internal.open_descs) &&
 	    bdev->blockcnt > size) {
 		ret = -EBUSY;
+		if (resize_cb != NULL) {
+			resize_cb(bdev, cb_arg, ret);
+		}
 	} else {
+		SPDK_ERRLOG("%%%% spdk_bdev_resize: %lu -> %lu, %u\n",
+			    bdev->blockcnt,	/* old */
+			    size,		/* new */
+			    bdev->blocklen);
 		bdev->blockcnt = size;
+		if (resize_cb != NULL) {
+			resize_cb(bdev, cb_arg, 0);
+		}
 		TAILQ_FOREACH(desc, &bdev->internal.open_descs, link) {
 			event_notify(desc, _resize_notify);
 		}

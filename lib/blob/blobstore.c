@@ -10119,6 +10119,8 @@ bs_grow_live_load_super_cpl(spdk_bs_sequence_t *seq, void *cb_arg, int bserrno)
 		return;
 	}
 
+	SPDK_ERRLOG("%%%% bs_grow_live_load_super_cpl | <%p> %lu, %u\n", ctx->bs->dev, ctx->bs->dev->blockcnt, ctx->bs->dev->blocklen);
+
 	dev_size = ctx->bs->dev->blockcnt * ctx->bs->dev->blocklen;
 	total_clusters = dev_size / ctx->super->cluster_size;
 	used_cluster_mask_len = spdk_divide_round_up(sizeof(struct spdk_bs_md_mask) +

@@ -11,6 +11,8 @@
 #include "spdk/uuid.h"
 #include "spdk/blob.h"
 
+#include "../../../lib/blob/blobstore.h"
+
 #include "vbdev_lvol.h"
 
 struct vbdev_lvol_io {
@@ -154,12 +156,71 @@ vbdev_lvs_hotremove_cb(struct spdk_bdev *bdev)
 }
 
 static void
+vbdev_lvs_grow_live_cpl(void *cb_arg, int lvserrno)
+{
+	struct lvol_store_bdev *lvs_bdev = cb_arg;
+	struct spdk_lvol_store *lvs;
+	struct spdk_blob_store *bs;
+
+	lvs = lvs_bdev->lvs;
+	bs = lvs->blobstore;
+
+	SPDK_ERRLOG("++++ LVOL GROW LIVE DONE: code=%d\n", lvserrno);
+	SPDK_ERRLOG("++++ LVOL GROW LIVE DONE: %s (%s): %lu: total=%lu, free=%lu\n",
+		    lvs->name,
+		    lvs_bdev->bdev->name,
+		    lvs_bdev->bdev->blockcnt,
+		    bs->total_clusters,
+		    bs->num_free_clusters);
+}
+
+static void
+vbdev_lvs_grow_live_cb(struct spdk_bdev *bdev)
+{
+	struct lvol_store_bdev *lvs_bdev;
+	struct spdk_lvol_store *lvs;
+	struct spdk_blob_store *bs;
+
+	SPDK_ERRLOG("++++ LVOL'S BDEV RESIZE EVENT: %s: -> %lu Mb (%lu bytes)\n",
+		    spdk_bdev_get_name(bdev),
+		    bdev->blockcnt * bdev->blocklen / (1024 * 1024),
+		    bdev->blockcnt * bdev->blocklen);
+
+	lvs_bdev = vbdev_get_lvs_bdev_by_bdev(bdev);
+	if (lvs_bdev == NULL) {
+		SPDK_ERRLOG("bdev %s being resized: cannot find lvs bdev\n",
+			    spdk_bdev_get_name(bdev));
+		return;
+	}
+
+	lvs = lvs_bdev->lvs;
+	bs = lvs->blobstore;
+
+	SPDK_ERRLOG("++++ LVOL GROW LIVE GO: %s (%s): %lu -> %lu: total=%lu, free=%lu\n",
+		    lvs->name,
+		    lvs_bdev->bdev->name,
+		    lvs->bs_dev->blockcnt,	/* old count on spdk_bs_bdev */
+		    lvs_bdev->bdev->blockcnt,	/* new count on spdk_bdev */
+		    bs->total_clusters,
+		    bs->num_free_clusters);
+
+	/* Update block count on spdk_bs_bdev. */
+	spdk_bdev_update_bs_blockcnt(lvs->bs_dev);
+
+	/* Grow the BS. */
+	spdk_lvs_grow_live(lvs_bdev->lvs, vbdev_lvs_grow_live_cpl, lvs_bdev);
+}
+
+static void
 vbdev_lvs_base_bdev_event_cb(enum spdk_bdev_event_type type, struct spdk_bdev *bdev,
 			     void *event_ctx)
 {
 	switch (type) {
 	case SPDK_BDEV_EVENT_REMOVE:
 		vbdev_lvs_hotremove_cb(bdev);
+		break;
+	case SPDK_BDEV_EVENT_RESIZE:
+		vbdev_lvs_grow_live_cb(bdev);
 		break;
 	default:
 		SPDK_NOTICELOG("Unsupported bdev event: type %d\n", type);
