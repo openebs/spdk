@@ -3679,6 +3679,9 @@ struct spdk_bs_load_ctx {
 	uint32_t			*extent_page_num;
 	struct spdk_blob_md_page	*extent_pages;
 	struct spdk_bit_array		*used_clusters;
+    struct spdk_bit_array       *uniq_clusters;
+    uint64_t totals;
+    uint64_t duplicates;
 
 	spdk_bs_sequence_t			*seq;
 	spdk_blob_op_with_handle_complete	iter_cb_fn;
@@ -4301,13 +4304,19 @@ bs_load_replay_md_parse_page(struct spdk_bs_load_ctx *ctx, struct spdk_blob_md_p
 					 */
 					if (cluster_idx != 0) {
 						SPDK_NOTICELOG("Recover: cluster %" PRIu32 "\n", cluster_idx + j);
+                        if (ctx->force_recover) {
+                            if (!spdk_bit_array_get(ctx->used_clusters, cluster_idx + j)) {
+                                bs->num_free_clusters--;
+                            }
+                        } else {
+                            bs->num_free_clusters--;
+                        }
 						spdk_bit_array_set(ctx->used_clusters, cluster_idx + j);
 						if (bs->num_free_clusters == 0) {
 							return -ENOSPC;
 						}
-						bs->num_free_clusters--;
 					}
-					cluster_count++;
+                    cluster_count++;
 				}
 			}
 			if (cluster_count == 0) {
@@ -4339,13 +4348,20 @@ bs_load_replay_md_parse_page(struct spdk_bs_load_ctx *ctx, struct spdk_blob_md_p
 					    cluster_idx >= desc_extent->start_cluster_idx + cluster_count) {
 						return -EINVAL;
 					}
+                    if (ctx->force_recover) {
+                        if (!spdk_bit_array_get(ctx->used_clusters, cluster_idx)) {
+                            bs->num_free_clusters--;
+                        }
+                    } else {
+                        bs->num_free_clusters--;
+                    }
 					spdk_bit_array_set(ctx->used_clusters, cluster_idx);
 					if (bs->num_free_clusters == 0) {
+                        SPDK_ERRLOG("Ran out of free clusters\n");
 						return -ENOSPC;
 					}
-					bs->num_free_clusters--;
 				}
-				cluster_count++;
+                cluster_count++;
 			}
 
 			if (cluster_count == 0) {
@@ -4421,22 +4437,26 @@ bs_load_cur_extent_page_valid(struct spdk_blob_md_page *page)
 
 	crc = blob_md_page_calc_crc(page);
 	if (crc != page->crc) {
-		return false;
+        SPDK_NOTICELOG("CRC\n");
+        return false;
 	}
 
 	/* Extent page should always be of sequence num 0. */
 	if (page->sequence_num != 0) {
+        SPDK_NOTICELOG("ERR\n");
 		return false;
 	}
 
 	/* Descriptor type must be EXTENT_PAGE. */
 	if (desc->type != SPDK_MD_DESCRIPTOR_TYPE_EXTENT_PAGE) {
+        SPDK_NOTICELOG("ERR %d\n", desc->type);
 		return false;
 	}
 
 	/* Descriptor length cannot exceed the page. */
 	desc_len = sizeof(*desc) + desc->length;
 	if (desc_len > sizeof(page->descriptors)) {
+        SPDK_NOTICELOG("ERR\n");
 		return false;
 	}
 
@@ -4444,6 +4464,7 @@ bs_load_cur_extent_page_valid(struct spdk_blob_md_page *page)
 	if (desc_len + sizeof(*desc) <= sizeof(page->descriptors)) {
 		desc = (struct spdk_blob_md_descriptor *)((uintptr_t)page->descriptors + desc_len);
 		if (desc->length != 0) {
+            SPDK_NOTICELOG("ERR\n");
 			return false;
 		}
 	}
@@ -4559,6 +4580,7 @@ bs_load_replay_extent_page_cpl(spdk_bs_sequence_t *seq, void *cb_arg, int bserrn
 	struct spdk_bs_load_ctx *ctx = cb_arg;
 	uint32_t page_num;
 	uint64_t i;
+    int retx = 0;
 
 	if (bserrno != 0) {
 		spdk_free(ctx->extent_pages);
@@ -4577,7 +4599,9 @@ bs_load_replay_extent_page_cpl(spdk_bs_sequence_t *seq, void *cb_arg, int bserrn
 
 		page_num = ctx->extent_page_num[i];
 		spdk_bit_array_set(ctx->bs->used_md_pages, page_num);
-		if (bs_load_replay_md_parse_page(ctx, &ctx->extent_pages[i])) {
+        retx = bs_load_replay_md_parse_page(ctx, &ctx->extent_pages[i]);
+		if (retx) {
+            SPDK_NOTICELOG("ERROR bs_load_replay_md_parse_page: %d\n", retx);
 			spdk_free(ctx->extent_pages);
 			bs_load_ctx_fail(ctx, -EILSEQ);
 			return;
@@ -4628,6 +4652,7 @@ bs_load_replay_md_cpl(spdk_bs_sequence_t *seq, void *cb_arg, int bserrno)
 	struct spdk_blob_md_page *page;
 
 	if (bserrno != 0) {
+        SPDK_NOTICELOG("ERROR BSERRNO: %d \n", bserrno);
 		bs_load_ctx_fail(ctx, bserrno);
 		return;
 	}
@@ -4719,6 +4744,9 @@ bs_recover(struct spdk_bs_load_ctx *ctx)
 	}
 
 	ctx->bs->num_free_clusters = ctx->bs->total_clusters;
+    SPDK_NOTICELOG("total_clusters: %ld\n", ctx->bs->total_clusters);
+    SPDK_NOTICELOG("total_data_clusters: %ld\n", ctx->bs->total_data_clusters);
+    SPDK_NOTICELOG("num_free_clusters: %ld\n", ctx->bs->num_free_clusters);
 	bs_load_replay_md(ctx);
 }
 
@@ -4812,6 +4840,8 @@ bs_load_super_cpl(spdk_bs_sequence_t *seq, void *cb_arg, int bserrno)
 		bs_load_ctx_fail(ctx, rc);
 		return;
 	}
+
+    SPDK_NOTICELOG("num_free_clusters: %ld\n", ctx->bs->num_free_clusters);
 
 	if (ctx->super->used_blobid_mask_len == 0 || ctx->super->clean == 0 || ctx->force_recover) {
 		bs_recover(ctx);
@@ -5087,8 +5117,10 @@ bs_dump_print_md_page(struct spdk_bs_load_ctx *ctx)
 	struct spdk_blob_md_descriptor *desc;
 	size_t cur_desc = 0;
 	uint32_t crc;
+    struct spdk_bit_array * cluster_check = ctx->uniq_clusters;
+    uint64_t duplicates = 0;
 
-	fprintf(ctx->fp, "=========\n");
+    fprintf(ctx->fp, "=========\n");
 	fprintf(ctx->fp, "Metadata Page Index: %" PRIu32 " (0x%" PRIx32 ")\n", page_idx, page_idx);
 	fprintf(ctx->fp, "Start LBA: %" PRIu64 "\n", bs_md_page_to_lba(ctx->bs, page_idx));
 	fprintf(ctx->fp, "Blob ID: 0x%" PRIx64 "\n", page->id);
@@ -5125,8 +5157,14 @@ bs_dump_print_md_page(struct spdk_bs_load_ctx *ctx)
 
 			for (i = 0; i < desc_extent_rle->length / sizeof(desc_extent_rle->extents[0]); i++) {
 				if (desc_extent_rle->extents[i].cluster_idx != 0) {
+                    if (spdk_bit_array_get(cluster_check, desc_extent_rle->extents[i].cluster_idx)) {
+                        fprintf(ctx->fp, "Cluster %d was already seen - duplicate\n", desc_extent_rle->extents[i].cluster_idx);
+                        duplicates++;
+                    }
+                    spdk_bit_array_set(cluster_check, desc_extent_rle->extents[i].cluster_idx);
 					fprintf(ctx->fp, "Allocated Extent - Start: %" PRIu32,
 						desc_extent_rle->extents[i].cluster_idx);
+                    ctx->totals++;
 				} else {
 					fprintf(ctx->fp, "Unallocated Extent - ");
 				}
@@ -5141,8 +5179,14 @@ bs_dump_print_md_page(struct spdk_bs_load_ctx *ctx)
 
 			for (i = 0; i < desc_extent->length / sizeof(desc_extent->cluster_idx[0]); i++) {
 				if (desc_extent->cluster_idx[i] != 0) {
+                    if (spdk_bit_array_get(cluster_check, desc_extent->cluster_idx[i])) {
+                        fprintf(ctx->fp, "Cluster %d was already seen - duplicate\n", desc_extent->cluster_idx[i]);
+                        duplicates++;
+                    }
+                    spdk_bit_array_set(cluster_check, desc_extent->cluster_idx[i]);
 					fprintf(ctx->fp, "Allocated Extent - Start: %" PRIu32,
 						desc_extent->cluster_idx[i]);
+                    ctx->totals++;
 				} else {
 					fprintf(ctx->fp, "Unallocated Extent");
 				}
@@ -5167,6 +5211,13 @@ bs_dump_print_md_page(struct spdk_bs_load_ctx *ctx)
 		}
 		desc = (struct spdk_blob_md_descriptor *)((uintptr_t)page->descriptors + cur_desc);
 	}
+    ctx->duplicates += duplicates;
+    fprintf(ctx->fp, "Totals: %ld\n", ctx->totals);
+    fprintf(ctx->fp, "Duplicates: %ld\n", duplicates);
+    fprintf(ctx->fp, "DuplicatesAcc: %ld\n", ctx->duplicates);
+    if (duplicates > 0 ) {
+        fprintf(ctx->fp, "DuplicateBlob ID: 0x%" PRIx64 " has %ld dups\n", page->id, duplicates);
+    }
 }
 
 static void
@@ -5242,6 +5293,11 @@ bs_dump_super_cpl(spdk_bs_sequence_t *seq, void *cb_arg, int bserrno)
 	fprintf(ctx->fp, "Metadata Start: %" PRIu32 "\n", ctx->super->md_start);
 	fprintf(ctx->fp, "Metadata Length: %" PRIu32 "\n", ctx->super->md_len);
 
+    ctx->uniq_clusters = spdk_bit_array_create(ctx->bs->num_free_clusters);
+    if (!ctx->uniq_clusters) {
+        return;
+    }
+
 	ctx->cur_page = 0;
 	ctx->page = spdk_zmalloc(SPDK_BS_PAGE_SIZE, 0,
 				 NULL, SPDK_ENV_SOCKET_ID_ANY, SPDK_MALLOC_DMA);
@@ -5283,6 +5339,7 @@ spdk_bs_dump(struct spdk_bs_dev *dev, FILE *fp, spdk_bs_dump_print_xattr print_x
 	ctx->dumping = true;
 	ctx->fp = fp;
 	ctx->print_xattr_fn = print_xattr_fn;
+    ctx->totals = ctx->duplicates = 0;
 
 	cpl.type = SPDK_BS_CPL_TYPE_BS_BASIC;
 	cpl.u.bs_basic.cb_fn = cb_fn;
@@ -9002,19 +9059,19 @@ bs_grow_load_super_cpl(spdk_bs_sequence_t *seq, void *cb_arg, int bserrno)
 
 	if (ctx->super->version > SPDK_BS_VERSION ||
 	    ctx->super->version < SPDK_BS_INITIAL_VERSION) {
-		bs_load_ctx_fail(ctx, -EILSEQ);
+		bs_load_ctx_fail(ctx, -1);
 		return;
 	}
 
 	if (memcmp(ctx->super->signature, SPDK_BS_SUPER_BLOCK_SIG,
 		   sizeof(ctx->super->signature)) != 0) {
-		bs_load_ctx_fail(ctx, -EILSEQ);
+		bs_load_ctx_fail(ctx, -2);
 		return;
 	}
 
 	crc = blob_md_page_calc_crc(ctx->super);
 	if (crc != ctx->super->crc) {
-		bs_load_ctx_fail(ctx, -EILSEQ);
+		bs_load_ctx_fail(ctx, -3);
 		return;
 	}
 
@@ -9033,7 +9090,7 @@ bs_grow_load_super_cpl(spdk_bs_sequence_t *seq, void *cb_arg, int bserrno)
 	if (ctx->super->size > ctx->bs->dev->blockcnt * ctx->bs->dev->blocklen) {
 		SPDK_NOTICELOG("Size mismatch, dev size: %" PRIu64 ", blobstore size: %" PRIu64 "\n",
 			       ctx->bs->dev->blockcnt * ctx->bs->dev->blocklen, ctx->super->size);
-		bs_load_ctx_fail(ctx, -EILSEQ);
+		bs_load_ctx_fail(ctx, -4);
 		return;
 	}
 
