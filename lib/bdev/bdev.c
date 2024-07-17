@@ -3553,6 +3553,17 @@ bdev_io_complete_parent_sequence_cb(void *ctx, int status)
 	parent_bdev_io_complete(bdev_io, status);
 }
 
+/*
+ * Determines if bdev_io has no space error status.
+ */
+static bool
+_is_no_space_error(struct spdk_bdev_io *bdev_io)
+{
+	return bdev_io->internal.status == SPDK_BDEV_IO_STATUS_NVME_ERROR &&
+	       bdev_io->internal.error.nvme.sct == SPDK_NVME_SCT_VENDOR_SPECIFIC &&
+	       bdev_io->internal.error.nvme.sc == ENOSPC;
+}
+
 static void
 bdev_io_split_done(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg)
 {
@@ -3563,7 +3574,17 @@ bdev_io_split_done(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg)
 	assert(parent_io->internal.f.split);
 
 	if (!success) {
-		parent_io->internal.status = SPDK_BDEV_IO_STATUS_FAILED;
+		/*
+		 * Propagate the last child error, unless it is ENOSPC.
+		 * ENOSPC takes lower precedence because it may hide
+		 * a more important failure.
+		 */
+		if (parent_io->internal.status == SPDK_BDEV_IO_STATUS_SUCCESS ||
+		    !_is_no_space_error(bdev_io)) {
+			parent_io->internal.status = bdev_io->internal.status;
+			parent_io->internal.error = bdev_io->internal.error;
+		}
+
 		/* If any child I/O failed, stop further splitting process. */
 		parent_io->internal.split.current_offset_blocks += parent_io->internal.split.remaining_num_blocks;
 		parent_io->internal.split.remaining_num_blocks = 0;
