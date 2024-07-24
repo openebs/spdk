@@ -27,6 +27,8 @@
 
 #define BLOB_CRC32C_INITIAL    0xffffffffUL
 
+static bool g_cluster_unmap_enabled = true;
+
 static int bs_register_md_thread(struct spdk_blob_store *bs);
 static int bs_unregister_md_thread(struct spdk_blob_store *bs);
 static void blob_close_cpl(spdk_bs_sequence_t *seq, void *cb_arg, int bserrno);
@@ -3307,7 +3309,7 @@ blob_request_submit_op_single(struct spdk_io_channel *_ch, struct spdk_blob *blo
 		if (spdk_blob_is_thin_provisioned(blob) && is_allocated &&
 		    (!blob->locked_operation_in_progress) &&
 		    blob_backed_with_zeroes_dev(blob) &&
-		    bs_io_units_per_cluster(blob) == length) {
+		    bs_io_units_per_cluster(blob) == length && g_cluster_unmap_enabled) {
 			struct spdk_bs_channel *bs_channel = spdk_io_channel_get_ctx(_ch);
 			uint64_t cluster_start_page;
 			uint32_t cluster_number;
@@ -3351,6 +3353,24 @@ blob_request_submit_op_single(struct spdk_io_channel *_ch, struct spdk_blob *blo
 			cpl.u.blob_basic.cb_fn = spdk_free_cluster_unmap_complete;
 			cpl.u.blob_basic.cb_arg = ctx;
 		}
+
+
+		/* OLD
+		spdk_bs_batch_t *batch;
+
+		batch = bs_batch_open(_ch, &cpl, blob);
+		if (!batch) {
+			cb_fn(cb_arg, -ENOMEM);
+			return;
+		}
+
+		if (is_allocated) {
+			bs_batch_unmap_dev(batch, lba, lba_count);
+		}
+
+		bs_batch_close(batch);
+		break;
+		 */
 
 		batch = bs_batch_open(_ch, &cpl, blob);
 		if (!batch) {
@@ -10623,6 +10643,12 @@ spdk_blob_is_degraded(const struct spdk_blob *blob)
 	}
 
 	return blob->back_bs_dev->is_degraded(blob->back_bs_dev);
+}
+
+void
+spdk_blob_enable_cluster_unmap(bool is_enabled)
+{
+	g_cluster_unmap_enabled = is_enabled;
 }
 
 SPDK_LOG_REGISTER_COMPONENT(blob)
