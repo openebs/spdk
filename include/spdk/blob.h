@@ -1312,6 +1312,14 @@ int
 spdk_blob_get_cluster_bitmap(struct spdk_blob *blob, spdk_blob_cluster_bitmap_complete cb_fn,
 			     void *cb_arg);
 
+/**
+ * Enables or disables globally cluster release on unmap.
+ *
+ * \param is_enabled If true, cluster release on unmap is enabled.
+ */
+void
+spdk_blob_enable_cluster_unmap(bool is_enabled);
+
 #ifdef __cplusplus
 }
 #endif
