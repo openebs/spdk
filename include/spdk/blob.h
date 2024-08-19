@@ -477,6 +477,24 @@ uint64_t spdk_bs_free_cluster_count(struct spdk_blob_store *bs);
 uint64_t spdk_bs_total_data_cluster_count(struct spdk_blob_store *bs);
 
 /**
+ * Get the blobstore metadata size in pages.
+ *
+ * \param bs blobstore to query.
+ *
+ * \return the blobstore metadata size in pages.
+ */
+uint64_t spdk_bs_get_md_len(struct spdk_blob_store *bs);
+
+/**
+ * Get the number of used metadata pages.
+ *
+ * \param bs blobstore to query.
+ *
+ * \return the number of used metadata pages.
+ */
+uint64_t spdk_bs_get_used_md(struct spdk_blob_store *bs);
+
+/**
  * Get the blob id.
  *
  * \param blob Blob struct to query.

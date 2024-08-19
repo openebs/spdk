@@ -1266,20 +1266,40 @@ lvs_verify_lvol_name(struct spdk_lvol_store *lvs, const char *name)
 	return 0;
 }
 
+void
+spdk_lvol_opts_init(struct spdk_lvol_opts *o)
+{
+	memset(o, 0, sizeof(*o));
+	o->name = NULL;
+	o->uuid = NULL;
+	o->size = 0;
+	o->thin_provision = false;
+	o->use_extent_table = true;
+	o->clear_method = LVOL_CLEAR_WITH_NONE;
+	o->opts_size = sizeof(*o);
+}
+
 int
 spdk_lvol_create(struct spdk_lvol_store *lvs, const char *name, uint64_t sz,
 		 bool thin_provision, enum lvol_clear_method clear_method,
 		 spdk_lvol_op_with_handle_complete cb_fn,
 		 void *cb_arg)
 {
-	return spdk_lvol_create_with_uuid(lvs, name, sz, thin_provision,
-					  clear_method, NULL, cb_fn, cb_arg);
+	struct spdk_lvol_opts opts;
+
+	spdk_lvol_opts_init(&opts);
+	opts.name = name;
+	opts.size = sz;
+	opts.thin_provision = thin_provision;
+	opts.clear_method = clear_method;
+
+	return spdk_lvol_create_with_opts(lvs, &opts, cb_fn, cb_arg);
 }
 
 int
-spdk_lvol_create_with_uuid(struct spdk_lvol_store *lvs, const char *name, uint64_t sz,
-			   bool thin_provision, enum lvol_clear_method clear_method,
-			   const char *uuid, spdk_lvol_op_with_handle_complete cb_fn,
+spdk_lvol_create_with_opts(struct spdk_lvol_store *lvs,
+			   const struct spdk_lvol_opts *lvol_opts,
+			   spdk_lvol_op_with_handle_complete cb_fn,
 			   void *cb_arg)
 {
 	struct spdk_lvol_with_handle_req *req;
@@ -1290,12 +1310,14 @@ spdk_lvol_create_with_uuid(struct spdk_lvol_store *lvs, const char *name, uint64
 	char *xattr_names[] = {LVOL_NAME, LVOL_UUID};
 	int rc;
 
+	assert(lvol_opts);
+
 	if (lvs == NULL) {
 		SPDK_ERRLOG("lvol store does not exist\n");
 		return -EINVAL;
 	}
 
-	rc = lvs_verify_lvol_name(lvs, name);
+	rc = lvs_verify_lvol_name(lvs, lvol_opts->name);
 	if (rc < 0) {
 		return rc;
 	}
@@ -1310,15 +1332,19 @@ spdk_lvol_create_with_uuid(struct spdk_lvol_store *lvs, const char *name, uint64
 	req->cb_fn = cb_fn;
 	req->cb_arg = cb_arg;
 
-	if (uuid) {
-		if (spdk_uuid_parse(&parsed_uuid, uuid) != 0) {
+	if (lvol_opts->uuid) {
+		if (spdk_uuid_parse(&parsed_uuid, lvol_opts->uuid) != 0) {
 			free(req);
 			SPDK_ERRLOG("Invalid lvol uuid provided\n");
 			return -EINVAL;
 		}
 	}
 
-	lvol = lvol_alloc(lvs, name, uuid ? &parsed_uuid : NULL, thin_provision, clear_method);
+	lvol = lvol_alloc(lvs,
+			  lvol_opts->name,
+			  lvol_opts->uuid ? &parsed_uuid : NULL,
+			  lvol_opts->thin_provision,
+			  lvol_opts->clear_method);
 	if (!lvol) {
 		free(req);
 		SPDK_ERRLOG("Cannot alloc memory for lvol base pointer\n");
@@ -1327,8 +1353,9 @@ spdk_lvol_create_with_uuid(struct spdk_lvol_store *lvs, const char *name, uint64
 
 	req->lvol = lvol;
 	spdk_blob_opts_init(&opts, sizeof(opts));
-	opts.thin_provision = thin_provision;
-	opts.num_clusters = spdk_divide_round_up(sz, spdk_bs_get_cluster_size(bs));
+	opts.thin_provision = lvol_opts->thin_provision;
+	opts.use_extent_table = lvol_opts->use_extent_table;
+	opts.num_clusters = spdk_divide_round_up(lvol_opts->size, spdk_bs_get_cluster_size(bs));
 	opts.clear_method = lvol->clear_method;
 	opts.xattrs.count = SPDK_COUNTOF(xattr_names);
 	opts.xattrs.names = xattr_names;
