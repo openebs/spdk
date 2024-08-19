@@ -6167,6 +6167,24 @@ spdk_bs_total_data_cluster_count(struct spdk_blob_store *bs)
 	return bs->total_data_clusters;
 }
 
+uint64_t
+spdk_bs_get_md_len(struct spdk_blob_store *bs)
+{
+	return bs->md_len;
+}
+
+uint64_t
+spdk_bs_get_used_md(struct spdk_blob_store *bs)
+{
+	uint64_t res = 0;
+
+	spdk_spin_lock(&bs->used_lock);
+	res = spdk_bit_array_count_set(bs->used_md_pages);
+	spdk_spin_unlock(&bs->used_lock);
+
+	return res;
+}
+
 static int
 bs_register_md_thread(struct spdk_blob_store *bs)
 {

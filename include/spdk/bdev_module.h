@@ -1350,6 +1350,32 @@ uint64_t spdk_bdev_io_get_submit_tsc(struct spdk_bdev_io *bdev_io);
 int spdk_bdev_notify_blockcnt_change(struct spdk_bdev *bdev, uint64_t size);
 
 /**
+ * spdk_bdev_resize() callback.
+ *
+ * \param bdev Block device being resized.
+ * \param cb_arg Argument passed to the resize function.
+ * \param status 0 for successfull resize, negated errno on failure.
+ */
+typedef void (*spdk_resize_cb)(struct spdk_bdev *bdev, void *cb_arg, int status);
+
+/**
+ * Resizes the bdev.
+ *
+ * Change number of blocks for provided block device.
+ * It can only be called on a registered bdev.
+ *
+ * \param bdev Block device to change.
+ * \param size New size of bdev.
+ * \param resize_cb Called after the new size is applied.
+ * \param cb_arg Argument to pass to callback function.
+ * \return 0 on success, negated errno on failure.
+ */
+int spdk_bdev_resize(struct spdk_bdev *bdev,
+		     uint64_t size,
+		     spdk_resize_cb resize_cb,
+		     void *cb_arg);
+
+/**
  * Translates NVMe status codes to SCSI status information.
  *
  * The codes are stored in the user supplied integers.

@@ -30,4 +30,6 @@ int create_malloc_disk(struct spdk_bdev **bdev, const struct malloc_bdev_opts *o
 
 void delete_malloc_disk(const char *name, spdk_delete_malloc_complete cb_fn, void *cb_arg);
 
+int resize_malloc_disk(const char *name, uint64_t new_size_in_mb);
+
 #endif /* SPDK_BDEV_MALLOC_H */
