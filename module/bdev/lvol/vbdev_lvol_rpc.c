@@ -1686,6 +1686,7 @@ spdk_rpc_construct_ms_lvol_bdev(struct spdk_jsonrpc_request *request,
 	enum lvol_clear_method clear_method;
 	int rc;
 	struct spdk_lvol_store *lvs = NULL;
+	struct spdk_lvol_opts lvol_opts;
 
 	SPDK_INFOLOG(lvol_rpc, "Creating blob\n");
 
@@ -1725,9 +1726,14 @@ spdk_rpc_construct_ms_lvol_bdev(struct spdk_jsonrpc_request *request,
 		clear_method = LVOL_CLEAR_WITH_DEFAULT;
 	}
 
-	rc = vbdev_lvol_create_with_uuid(lvs, req.lvol_name, req.size,
-					 req.thin_provision, clear_method, req.uuid,
-					 rpc_bdev_lvol_create_cb, request);
+	spdk_lvol_opts_init(&lvol_opts);
+	lvol_opts.name = req.lvol_name;
+	lvol_opts.size = req.size;
+	lvol_opts.thin_provision = req.thin_provision;
+	lvol_opts.clear_method = clear_method;
+	lvol_opts.uuid = req.uuid;
+
+	rc = vbdev_lvol_create_with_opts(lvs, &lvol_opts, rpc_bdev_lvol_create_cb, request);
 	if (rc < 0) {
 		goto invalid;
 	}

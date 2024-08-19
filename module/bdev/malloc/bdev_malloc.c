@@ -865,6 +865,107 @@ delete_malloc_disk(const char *name, spdk_delete_malloc_complete cb_fn, void *cb
 	}
 }
 
+struct malloc_disk_resize_ctx {
+	void *new_malloc_buf;
+};
+
+static void
+malloc_disk_resize_cb(struct spdk_bdev *bdev, void *cb_arg, int status)
+{
+	struct malloc_disk_resize_ctx *ctx = cb_arg;
+	struct malloc_disk *mdisk = bdev->ctxt;
+	void *old_malloc_buf = mdisk->malloc_buf;
+
+	if (status != 0) {
+		/* The resize caller will free new_malloc_buf. */
+		return;
+	}
+
+	/* TODO: we've having a very bad race with I/O here. */
+	memcpy(ctx->new_malloc_buf, old_malloc_buf, bdev->blockcnt * bdev->blocklen);
+	mdisk->malloc_buf = ctx->new_malloc_buf;
+	spdk_free(old_malloc_buf);
+	ctx->new_malloc_buf = NULL;
+}
+
+static void
+dummy_bdev_event_cb(enum spdk_bdev_event_type type, struct spdk_bdev *bdev, void *ctx)
+{
+}
+
+int
+resize_malloc_disk(const char *bdev_name, uint64_t new_size_in_mb)
+{
+	struct spdk_bdev_desc *desc;
+	struct spdk_bdev *bdev;
+	struct malloc_disk *mdisk;
+	struct malloc_disk_resize_ctx *ctx;
+
+	uint64_t current_size_in_mb;
+	uint64_t new_size_in_byte;
+	int rc = 0;
+
+	ctx = calloc(1, sizeof(*ctx));
+	if (ctx == NULL) {
+		return -ENOMEM;
+	}
+
+	rc = spdk_bdev_open_ext(bdev_name, false, dummy_bdev_event_cb, NULL, &desc);
+	if (rc != 0) {
+		SPDK_ERRLOG("failed to open bdev; %s.\n", bdev_name);
+		return rc;
+	}
+
+	bdev = spdk_bdev_desc_get_bdev(desc);
+
+	if (bdev->module != &malloc_if) {
+		rc = -EINVAL;
+		goto exit;
+	}
+
+	mdisk = bdev->ctxt;
+
+	/* TODO: add support for metadata buffer. */
+	if (mdisk->malloc_md_buf != NULL) {
+		SPDK_ERRLOG("Cannot resize malloc disk with metadata buffer.\n");
+		rc = -EINVAL;
+		goto exit;
+	}
+
+	current_size_in_mb = bdev->blocklen * bdev->blockcnt / (1024 * 1024);
+	if (new_size_in_mb < current_size_in_mb) {
+		SPDK_ERRLOG("The new bdev size must not be smaller than current bdev size.\n");
+		rc = -EINVAL;
+		goto exit;
+	}
+
+	new_size_in_byte = new_size_in_mb * 1024 * 1024;
+
+	if (new_size_in_mb == current_size_in_mb) {
+		SPDK_ERRLOG("The bdev size did not change.\n");
+		rc = 0;
+		goto exit;
+	}
+
+	/* Allocate the new data buffer. Resize callback will copy the data
+	 * and update mdisk->malloc_buf.
+	 */
+	ctx->new_malloc_buf = spdk_zmalloc(new_size_in_byte, 2 * 1024 * 1024, NULL,
+					   SPDK_ENV_LCORE_ID_ANY, SPDK_MALLOC_DMA);
+
+	rc = spdk_bdev_resize(bdev, new_size_in_byte / bdev->blocklen,
+			      malloc_disk_resize_cb, ctx);
+	if (rc != 0) {
+		SPDK_ERRLOG("failed to update or notify block cnt change.\n");
+	}
+
+exit:
+	spdk_bdev_close(desc);
+	spdk_free(ctx->new_malloc_buf);
+	free(ctx);
+	return rc;
+}
+
 static int
 malloc_completion_poller(void *ctx)
 {
