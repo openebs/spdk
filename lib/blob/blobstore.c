@@ -2830,7 +2830,7 @@ blob_write_copy(spdk_bs_sequence_t *seq, void *cb_arg, int bserrno)
 }
 
 static bool
-blob_can_copy(struct spdk_blob *blob, uint32_t cluster_start_page, uint64_t *base_lba)
+blob_can_copy(struct spdk_blob *blob, uint64_t cluster_start_page, uint64_t *base_lba)
 {
 	uint64_t lba = bs_dev_page_to_lba(blob->back_bs_dev, cluster_start_page);
 
@@ -2859,7 +2859,7 @@ bs_allocate_and_copy_cluster(struct spdk_blob *blob,
 	struct spdk_bs_cpl cpl;
 	struct spdk_bs_channel *ch;
 	struct spdk_blob_copy_cluster_ctx *ctx;
-	uint32_t cluster_start_page;
+	uint64_t cluster_start_page;
 	uint32_t cluster_number;
 	bool is_zeroes;
 	bool can_copy;
@@ -3296,7 +3296,7 @@ blob_request_submit_op_single(struct spdk_io_channel *_ch, struct spdk_blob *blo
 		if (spdk_blob_is_thin_provisioned(blob) && is_allocated &&
 		    bs_io_units_per_cluster(blob) == length && g_cluster_unmap_enabled) {
 			struct spdk_bs_channel *bs_channel = spdk_io_channel_get_ctx(_ch);
-			uint32_t cluster_start_page;
+			uint64_t cluster_start_page;
 			uint32_t cluster_number;
 
 			assert(offset % bs_io_units_per_cluster(blob) == 0);
