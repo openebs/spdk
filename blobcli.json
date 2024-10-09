@@ -1,0 +1,18 @@
+{
+  "subsystems": [
+    {
+      "subsystem": "bdev",
+      "config": [
+        {
+          "params": {
+            "name": "dump",
+            "filename": "/home/tiago/Documents/Support/CIVO/aio.io",
+            "block_size": 512
+          },
+          "method": "bdev_aio_create"
+        }
+      ]
+    }
+  ]
+}
+
