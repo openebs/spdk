@@ -32,9 +32,7 @@ jobs:
 
       - name: Setup
         run: |
-          sudo apt-get update
-          sudo apt-get install -y astyle libcunit1-dev libaio-dev libssl-dev \
-           libnuma-dev uuid-dev lcov nasm meson ninja-build python3-pyelftools
+          sudo ./scripts/pkgdep.sh
           git submodule update --init
           export MAKEFLAGS="-j$(nproc)"
 
@@ -44,7 +42,7 @@ jobs:
       - name: Build
         run: |
           ./configure --enable-werror --enable-debug --enable-coverage --enable-asan --with-crypto
-          make
+          make -j
 
       - name: Running Tests
         run: ./test/unit/unittest.sh
