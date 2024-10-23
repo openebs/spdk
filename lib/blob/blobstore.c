@@ -2941,6 +2941,44 @@ blob_calculate_lba_and_lba_count(struct spdk_blob *blob, uint64_t io_unit, uint6
 	}
 }
 
+static inline bool
+blob_ancestor_calc_lba_and_lba_count(struct spdk_blob *blob, uint64_t io_unit, uint64_t length,
+				     uint64_t *lba, uint64_t *lba_count)
+{
+	struct spdk_blob *orig_blob = blob;
+
+	if (blob->parent_id == SPDK_BLOBID_INVALID) {
+		return false;
+	}
+	*lba_count = length;
+	while (blob->parent_id != SPDK_BLOBID_INVALID) {
+		uint32_t cluster_start_page = bs_io_unit_to_cluster_start(blob, io_unit);
+		bool is_valid_range = blob->back_bs_dev->is_range_valid(blob->back_bs_dev,
+				      bs_dev_io_unit_to_lba(blob, blob->back_bs_dev, cluster_start_page),
+				      bs_dev_byte_to_lba(blob->back_bs_dev, blob->bs->cluster_sz));
+		if (!is_valid_range) {
+			goto error;
+		}
+
+		spdk_blob_id blob_id = blob->parent_id;
+		blob = blob_lookup(blob->bs, blob_id);
+		if (blob == NULL) {
+			goto error;
+		} else {
+			if (!bs_io_unit_is_allocated(blob, io_unit)) {
+				continue;
+			}
+			*lba = bs_blob_io_unit_to_lba(blob, io_unit);
+			return true;
+		}
+	}
+error:
+	assert(orig_blob->back_bs_dev != NULL);
+	*lba = bs_io_unit_to_back_dev_lba(orig_blob, io_unit);
+	*lba_count = bs_io_unit_to_back_dev_lba(orig_blob, *lba_count);
+	return false;
+}
+
 struct op_split_ctx {
 	struct spdk_blob *blob;
 	struct spdk_io_channel *channel;
