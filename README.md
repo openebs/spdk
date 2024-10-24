@@ -1,6 +1,7 @@
 # Storage Performance Development Kit
 
 [![Build Status](https://travis-ci.org/spdk/spdk.svg?branch=master)](https://travis-ci.org/spdk/spdk)
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fopenebs%2Fspdk.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fopenebs%2Fspdk?ref=badge_shield)
 
 The Storage Performance Development Kit ([SPDK](http://www.spdk.io)) provides a set of tools
 and libraries for writing high performance, scalable, user-mode storage
@@ -237,3 +238,7 @@ vfio.
 For additional details on how to get more involved in the community, including
 [contributing code](http://www.spdk.io/development) and participating in discussions and other activities, please
 refer to [spdk.io](http://www.spdk.io/community)
+
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fopenebs%2Fspdk.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fopenebs%2Fspdk?ref=badge_large)
