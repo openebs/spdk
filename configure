@@ -760,8 +760,9 @@ if [ -z "${CONFIG[ENV]}" ]; then
 			CONFIG[DPDK_DIR]="${rootdir}/dpdk/build"
 			# Default ipsec libs
 			if [[ "${CONFIG[CRYPTO]}" = "y" ]] && [[ $arch = x86_64* ]]; then
-				CONFIG[IPSEC_MB]=y
-				CONFIG[IPSEC_MB_DIR]="${rootdir}/intel-ipsec-mb/lib"
+				#CONFIG[IPSEC_MB]=y
+				#CONFIG[IPSEC_MB_DIR]="${rootdir}/intel-ipsec-mb/lib"
+				echo "no IPSEC_MB configured"
 			fi
 			echo "Using default DPDK in ${CONFIG[DPDK_DIR]}"
 		fi

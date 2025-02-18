@@ -600,6 +600,34 @@ vbdev_crypto_delete_name(struct bdev_names *name)
 	free(name);
 }
 
+/* For the named crypto vbdev and the named base bdev, create the crypto opts */
+struct vbdev_crypto_opts *
+create_crypto_opts_by_name(char* name, char* base_bdev_name, struct spdk_accel_crypto_key *key,
+		   bool key_owner)
+{
+	struct vbdev_crypto_opts *opts = calloc(1, sizeof(*opts));
+
+	if (!opts) {
+		return NULL;
+	}
+
+	opts->bdev_name = strdup(base_bdev_name);
+	if (!opts->bdev_name) {
+		free_crypto_opts(opts);
+		return NULL;
+	}
+	opts->vbdev_name = strdup(name);
+	if (!opts->vbdev_name) {
+		free_crypto_opts(opts);
+		return NULL;
+	}
+
+	opts->key = key;
+	opts->key_owner = key_owner;
+
+	return opts;
+}
+
 /* RPC entry point for crypto creation. */
 int
 create_crypto_disk(struct vbdev_crypto_opts *opts)
@@ -927,6 +955,25 @@ delete_crypto_disk(const char *bdev_name, spdk_delete_crypto_complete cb_fn,
 		free(ctx->bdev_name);
 		free(ctx);
 	}
+}
+
+/*
+* Get the vbdev_crypto instance corresponding to the given vbdev name.
+* It would've been ideal to return a vbdev_crypto handle itself, but the
+* vbdev_crypto struct isn't part of ffi via headers.
+*/
+struct spdk_bdev *
+vbdev_crypto_disk_get_base_bdev(const char *vbdev_name)
+{
+	struct vbdev_crypto *crypto_vbdev;
+
+	TAILQ_FOREACH(crypto_vbdev, &g_vbdev_crypto, link) {
+		if (strcmp(crypto_vbdev->crypto_bdev.name, vbdev_name) == 0) {
+			return crypto_vbdev->base_bdev;
+		}
+	}
+
+	return NULL;
 }
 
 /* Because we specified this function in our crypto bdev function table when we
