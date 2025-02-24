@@ -67,4 +67,13 @@ create_crypto_opts_by_name(char *name, char *base_bdev_name, struct spdk_accel_c
  */
 void free_crypto_opts(struct vbdev_crypto_opts *opts);
 
+/**
+ * Given a vbdev crypto name, get the handle for base bdev of the vbdev.
+ *
+ * \param vbdev_name Name of crypto vbdev.
+ * \return Handle to base bdev or NULL if not found.
+ */
+struct spdk_bdev *
+vbdev_crypto_disk_get_base_bdev(const char *vbdev_name);
+
 #endif /* SPDK_VBDEV_CRYPTO_H */

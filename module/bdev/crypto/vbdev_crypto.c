@@ -982,6 +982,21 @@ delete_crypto_disk(const char *bdev_name, spdk_delete_crypto_complete cb_fn,
 	}
 }
 
+/* Get the base bdev corresponding to the given vbdev name. */
+struct spdk_bdev *
+vbdev_crypto_disk_get_base_bdev(const char *vbdev_name)
+{
+	struct vbdev_crypto *crypto_vbdev;
+
+	TAILQ_FOREACH(crypto_vbdev, &g_vbdev_crypto, link) {
+		if (strcmp(crypto_vbdev->crypto_bdev.name, vbdev_name) == 0) {
+			return crypto_vbdev->base_bdev;
+		}
+	}
+
+	return NULL;
+}
+
 /* Because we specified this function in our crypto bdev function table when we
  * registered our crypto bdev, we'll get this call anytime a new bdev shows up.
  * Here we need to decide if we care about it and if so what to do. We
