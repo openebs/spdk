@@ -478,85 +478,6 @@ posix_sock_alloc(int fd, struct spdk_sock_impl_opts *impl_opts, bool enable_zero
 }
 
 static int
-posix_fd_create(struct addrinfo *res, struct spdk_sock_opts *opts,
-		struct spdk_sock_impl_opts *impl_opts)
-{
-	int fd;
-	int val = 1;
-	int rc, sz;
-#if defined(__linux__)
-	int to;
-#endif
-
-	fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-	if (fd < 0) {
-		/* error */
-		return -1;
-	}
-
-	sz = impl_opts->recv_buf_size;
-	rc = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &sz, sizeof(sz));
-	if (rc) {
-		/* Not fatal */
-	}
-
-	sz = impl_opts->send_buf_size;
-	rc = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sz, sizeof(sz));
-	if (rc) {
-		/* Not fatal */
-	}
-
-	rc = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof val);
-	if (rc != 0) {
-		close(fd);
-		/* error */
-		return -1;
-	}
-	rc = setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &val, sizeof val);
-	if (rc != 0) {
-		close(fd);
-		/* error */
-		return -1;
-	}
-
-#if defined(SO_PRIORITY)
-	if (opts->priority) {
-		rc = setsockopt(fd, SOL_SOCKET, SO_PRIORITY, &opts->priority, sizeof val);
-		if (rc != 0) {
-			close(fd);
-			/* error */
-			return -1;
-		}
-	}
-#endif
-
-	if (res->ai_family == AF_INET6) {
-		rc = setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &val, sizeof val);
-		if (rc != 0) {
-			close(fd);
-			/* error */
-			return -1;
-		}
-	}
-
-	if (opts->ack_timeout) {
-#if defined(__linux__)
-		to = opts->ack_timeout;
-		rc = setsockopt(fd, IPPROTO_TCP, TCP_USER_TIMEOUT, &to, sizeof(to));
-		if (rc != 0) {
-			close(fd);
-			/* error */
-			return -1;
-		}
-#else
-		SPDK_WARNLOG("TCP_USER_TIMEOUT is not supported.\n");
-#endif
-	}
-
-	return fd;
-}
-
-static int
 posix_sock_psk_find_session_server_cb(SSL *ssl, const unsigned char *identity,
 				      size_t identity_len, SSL_SESSION **sess)
 {
@@ -929,6 +850,44 @@ SSL_writev(SSL *ssl, struct iovec *iov, int iovcnt)
 	}
 }
 
+static int
+posix_sock_connect_async(struct addrinfo **ai,
+			 struct spdk_sock_opts *opts,
+			 struct spdk_sock_impl_opts *impl_opts,
+			 bool *inprogress)
+{
+	int rc;
+	int fd;
+
+	*inprogress = false;
+	for (; *ai != NULL; *ai = (*ai)->ai_next) {
+		fd = spdk_sock_posix_fd_create(*ai, opts, impl_opts);
+		if (fd < 0) {
+			continue;
+		}
+
+		if (posix_sock_make_nonblock(fd)) {
+			close(fd);
+			return -1;
+		}
+
+		rc = connect(fd, (*ai)->ai_addr, (*ai)->ai_addrlen);
+		if (rc != 0 && errno != EINPROGRESS) {
+			SPDK_ERRLOG("connect() failed, errno = %d\n", errno);
+			/* try next family */
+			close(fd);
+			continue;
+		} else if (rc != 0 && errno == EINPROGRESS) {
+			*inprogress = true;
+		}
+
+		*ai = (*ai)->ai_next;
+		return fd;
+	}
+
+	return -1;
+}
+
 static struct spdk_sock *
 posix_sock_create(const char *ip, int port,
 		  enum posix_sock_create_type type,
@@ -986,7 +945,7 @@ posix_sock_create(const char *ip, int port,
 	fd = -1;
 	for (res = res0; res != NULL; res = res->ai_next) {
 retry:
-		fd = posix_fd_create(res, opts, &impl_opts);
+		fd = spdk_sock_posix_fd_create(res, opts, &impl_opts);
 		if (fd < 0) {
 			continue;
 		}
