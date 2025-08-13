@@ -496,6 +496,16 @@ uint64_t spdk_bs_get_md_len(struct spdk_blob_store *bs);
 uint64_t spdk_bs_get_used_md(struct spdk_blob_store *bs);
 
 /**
+ * Get the maximum growable size of blobstore, in bytes.
+ *
+ * \param bs blobstore to query.
+ *
+ * \return the maximum growable size in bytes
+ */
+uint64_t
+spdk_bs_get_max_growable_size(struct spdk_blob_store *bs);
+
+/**
  * Get the blob id.
  *
  * \param blob Blob struct to query.
