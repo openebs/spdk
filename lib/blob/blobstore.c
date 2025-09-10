@@ -6201,7 +6201,6 @@ spdk_bs_get_max_growable_size(struct spdk_blob_store *bs)
 	max_number_of_clusters = ((max_used_cluster_mask * spdk_bs_get_page_size(bs))
 				  - sizeof(struct spdk_bs_md_mask)) * 8;
 
-	/* max growable size = max number of clusters * cluster size. */
 	return max_number_of_clusters * bs->cluster_sz;
 }
 
