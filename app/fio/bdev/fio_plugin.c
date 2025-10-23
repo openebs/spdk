@@ -311,7 +311,7 @@ spdk_fio_bdev_init_start(void *arg)
 {
 	bool *done = arg;
 
-	g_json_data = spdk_posix_file_load_from_name(g_json_config_file, &g_json_data_size);
+	spdk_posix_file_load_from_name(g_json_config_file, &g_json_data_size, &g_json_data);
 
 	if (g_json_data == NULL) {
 		SPDK_ERRLOG("could not allocate buffer for json config file\n");
