@@ -43,7 +43,9 @@ struct spdk_sock_request {
 	void	(*cb_fn)(void *cb_arg, int err);
 	void				*cb_arg;
 
-	/* These fields are used by the socket layer and should not be modified. */
+	/**
+	 * These fields are used by the socket layer and should not be modified
+	 */
 	struct __sock_request_internal {
 		TAILQ_ENTRY(spdk_sock_request)	link;
 
@@ -56,18 +58,13 @@ struct spdk_sock_request {
 
 		uint32_t			offset;
 
-		/* Last zero-copy sendmsg index. */
-		uint32_t			zcopy_idx;
-
-		/* Indicate if the whole req or part of it is pending zerocopy completion. */
-		bool pending_zcopy;
+		/* Indicate if the whole req or part of it is sent with zerocopy */
+		bool				is_zcopy;
 	} internal;
 
 	int				iovcnt;
 	/* struct iovec			iov[]; */
 };
-
-SPDK_STATIC_ASSERT(sizeof(struct spdk_sock_request) == 64, "Incorrect size.");
 
 #define SPDK_SOCK_REQUEST_IOV(req, i) ((struct iovec *)(((uint8_t *)req + sizeof(struct spdk_sock_request)) + (sizeof(struct iovec) * i)))
 

@@ -112,12 +112,6 @@ and Diffie-Hellman groups via `nvmf_set_config`.
 the user has specified neither `-f` nor `-s` options. This is only available on
 Linux since FreeBSD does not mount have a /dev/shm mount.
 
-<!-- Hey Reviewer, is this a good idea to copy this changelog from v25 to here since we cherry-picked it here ?-->
-### sock
-
-A new internal field was added to `spdk_sock_request`, increasing its size and moving `iovcnt` and
-user provided `iov[]` offsets by 8 bytes, which breaks ABI.
-
 ### thread
 
 Changed `spdk_iobuf_get/set_opts()` API to act more like spdk_bdev's variant.
