@@ -2,6 +2,10 @@
 
 ## v25.05.1: (Upcoming Release)
 
+### bdev
+
+All aliases are now removed from the block device names list upon unregistration.
+
 ## v25.05: NVMe PCIe interrupt mode, DIF insert/strip, mlx5 accel platform driver
 
 ### accel_mlx5
