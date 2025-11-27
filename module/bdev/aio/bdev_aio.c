@@ -27,6 +27,11 @@
 #include <libaio.h>
 #endif
 
+/* It's not safe to always assume RWF_NOWAIT is supported by a block device.
+ * During testing sometimes loop devices yield -EAGAIN forever...
+ */
+#undef RWF_NOWAIT
+
 struct bdev_aio_io_channel {
 	uint64_t				io_inflight;
 #ifdef __FreeBSD__
