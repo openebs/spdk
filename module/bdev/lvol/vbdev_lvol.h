@@ -173,4 +173,20 @@ int vbdev_lvol_shallow_copy(struct spdk_lvol *lvol, const char *bdev_name,
 void vbdev_lvol_set_external_parent(struct spdk_lvol *lvol, const char *esnap_name,
 				    spdk_lvol_op_complete cb_fn, void *cb_arg);
 
+/**
+ * \brief Sets IO timeout on bs_dev backing the lvstore.
+ *
+ * \param lvs Pointer to lvolstore
+ * \param Timeout value to be set
+ * \param lvs IO timeout callback function
+ *
+ * Note: cb_arg of spdk_bdev_io_timeout_cb will be set to lvs,
+ * so the callback function will have access to lvolstore context.
+ * This was to make sure that we dont allocate ctx which we were not able to free in case
+ * user calls vbdev_lvs_set_timeout again. We will see what happens on upstream patch.
+ * https://review.spdk.io/c/spdk/spdk/+/27572
+ */
+int vbdev_lvs_set_timeout(struct spdk_lvol_store *lvs, uint64_t timeout_in_sec,
+			  spdk_bdev_io_timeout_cb cb_fn);
+
 #endif /* SPDK_VBDEV_LVOL_H */

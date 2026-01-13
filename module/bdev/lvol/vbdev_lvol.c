@@ -117,6 +117,15 @@ _vbdev_lvol_change_bdev_alias(struct spdk_lvol *lvol, const char *new_lvol_name)
 	return 0;
 }
 
+int
+vbdev_lvs_set_timeout(struct spdk_lvol_store *lvs, uint64_t timeout_in_sec,
+		      spdk_bdev_io_timeout_cb cb_fn)
+{
+	struct spdk_bs_dev *bs_dev = lvs->bs_dev;
+
+	return spdk_bs_bdev_set_timeout(bs_dev, timeout_in_sec, cb_fn, lvs);
+}
+
 static struct lvol_store_bdev *
 vbdev_get_lvs_bdev_by_bdev(struct spdk_bdev *bdev_orig)
 {
