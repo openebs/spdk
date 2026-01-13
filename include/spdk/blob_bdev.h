@@ -84,6 +84,19 @@ void spdk_bdev_update_bs_blockcnt(struct spdk_bs_dev *bs_dev);
  */
 int spdk_bs_bdev_claim(struct spdk_bs_dev *bs_dev, struct spdk_bdev_module *module);
 
+/**
+ * Set IO timeout on blobstore device (bs_dev) desc.
+ *
+ * \param bs_dev Blobstore block device
+ * \param timeout_in_sec Timeout value
+ * \param cb_fn Bdev IO timeout callback
+ * \param cb_arg Callback argument.
+ *
+ * \return 0 on success, negated errno on failure.
+ */
+int spdk_bs_bdev_set_timeout(struct spdk_bs_dev *bs_dev, uint64_t timeout_in_sec,
+			     spdk_bdev_io_timeout_cb cb_fn, void *cb_arg);
+
 #ifdef __cplusplus
 }
 #endif
