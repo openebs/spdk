@@ -570,3 +570,12 @@ spdk_bdev_create_bs_dev_ext(const char *bdev_name, spdk_bdev_event_cb_t event_cb
 {
 	return spdk_bdev_create_bs_dev(bdev_name, true, NULL, 0, event_cb, event_ctx, bs_dev);
 }
+
+int
+spdk_bs_bdev_set_timeout(struct spdk_bs_dev *bs_dev, uint64_t timeout_in_sec,
+			 spdk_bdev_io_timeout_cb cb_fn, void *cb_arg)
+{
+	struct blob_bdev *blob_bdev = (struct blob_bdev *)bs_dev;
+
+	return spdk_bdev_set_timeout(blob_bdev->desc, timeout_in_sec, cb_fn, cb_arg);
+}
