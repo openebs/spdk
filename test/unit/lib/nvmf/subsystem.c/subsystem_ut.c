@@ -2057,6 +2057,20 @@ ut_nvmf_subsystem_paused(struct spdk_nvmf_subsystem *subsystem, void *ctx, int s
 }
 
 static void
+ut_nvmf_subsystem_pause_failed(struct spdk_nvmf_subsystem *subsystem, void *ctx, int status)
+{
+	CU_ASSERT_EQUAL(status, -1);
+	CU_ASSERT_EQUAL(subsystem->state, SPDK_NVMF_SUBSYSTEM_INACTIVE);
+}
+
+static void
+ut_nvmf_subsystem_resumed(struct spdk_nvmf_subsystem *subsystem, void *ctx, int status)
+{
+	CU_ASSERT_EQUAL(status, 0);
+	CU_ASSERT_EQUAL(subsystem->state, SPDK_NVMF_SUBSYSTEM_ACTIVE);
+}
+
+static void
 test_nvmf_subsystem_state_change(void)
 {
 	struct spdk_nvmf_tgt tgt = {};
@@ -2080,11 +2094,21 @@ test_nvmf_subsystem_state_change(void)
 				sizeof(struct spdk_nvmf_poll_group),
 				NULL);
 
+	rc = spdk_nvmf_subsystem_pause(subsystem, SPDK_NVME_GLOBAL_NS_TAG, ut_nvmf_subsystem_pause_failed,
+				       NULL);
+	CU_ASSERT(rc == 0);
+	poll_threads();
+
 	rc = spdk_nvmf_subsystem_start(discovery_subsystem, NULL, NULL);
 	CU_ASSERT(rc == 0);
 	poll_threads();
 	CU_ASSERT(discovery_subsystem->state == SPDK_NVMF_SUBSYSTEM_ACTIVE);
 	rc = spdk_nvmf_subsystem_start(subsystem, NULL, NULL);
+	CU_ASSERT(rc == 0);
+	poll_threads();
+	CU_ASSERT(subsystem->state == SPDK_NVMF_SUBSYSTEM_ACTIVE);
+
+	rc = spdk_nvmf_subsystem_resume(subsystem, ut_nvmf_subsystem_resumed, NULL);
 	CU_ASSERT(rc == 0);
 	poll_threads();
 	CU_ASSERT(subsystem->state == SPDK_NVMF_SUBSYSTEM_ACTIVE);
@@ -2097,10 +2121,32 @@ test_nvmf_subsystem_state_change(void)
 	poll_threads();
 	CU_ASSERT(subsystem->state == SPDK_NVMF_SUBSYSTEM_INACTIVE);
 
+	rc = spdk_nvmf_subsystem_pause(subsystem, SPDK_NVME_GLOBAL_NS_TAG,
+				       ut_nvmf_subsystem_pause_failed, NULL);
+	CU_ASSERT(rc == 0);
+	poll_threads();
+
 	rc = spdk_nvmf_subsystem_stop(discovery_subsystem, NULL, NULL);
 	CU_ASSERT(rc == 0);
 	poll_threads();
 	CU_ASSERT(discovery_subsystem->state == SPDK_NVMF_SUBSYSTEM_INACTIVE);
+	rc = spdk_nvmf_subsystem_stop(subsystem, NULL, NULL);
+	CU_ASSERT(rc == 0);
+	poll_threads();
+	CU_ASSERT(subsystem->state == SPDK_NVMF_SUBSYSTEM_INACTIVE);
+
+	rc = spdk_nvmf_subsystem_resume(subsystem, ut_nvmf_subsystem_resumed, NULL);
+	CU_ASSERT(rc == 0);
+	poll_threads();
+
+	rc = spdk_nvmf_subsystem_remove_ns(subsystem, 1);
+	CU_ASSERT(rc == -1);
+	poll_threads();
+
+	rc = spdk_nvmf_subsystem_destroy(subsystem, NULL, NULL);
+	CU_ASSERT(rc == -EAGAIN);
+	poll_threads();
+
 	rc = spdk_nvmf_subsystem_stop(subsystem, NULL, NULL);
 	CU_ASSERT(rc == 0);
 	poll_threads();

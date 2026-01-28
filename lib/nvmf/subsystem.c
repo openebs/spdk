@@ -592,7 +592,6 @@ nvmf_subsystem_set_state(struct spdk_nvmf_subsystem *subsystem,
 		__atomic_compare_exchange_n(&subsystem->state, &actual_old_state, state, false,
 					    __ATOMIC_RELAXED, __ATOMIC_RELAXED);
 	}
-	assert(actual_old_state == expected_old_state);
 	return actual_old_state - expected_old_state;
 }
 
@@ -1771,7 +1770,6 @@ spdk_nvmf_subsystem_remove_ns(struct spdk_nvmf_subsystem *subsystem, uint32_t ns
 
 	if (!(subsystem->state == SPDK_NVMF_SUBSYSTEM_INACTIVE ||
 	      subsystem->state == SPDK_NVMF_SUBSYSTEM_PAUSED)) {
-		assert(false);
 		return -1;
 	}
 
