@@ -1,9 +1,3 @@
-usdt:__EXE__:nvmf_tgt_state {
-	printf("%d.%06d: nvmf_tgt reached state %s\n",
-	       elapsed / (uint64)(1000 * 1000), elapsed % (uint64)(1000 * 1000),
-	       @target[arg1]);
-}
-
 usdt:__EXE__:nvmf_subsystem_change_state {
 	printf("%d.%06d: %s change state from %s to %s start\n",
 	       elapsed / (uint64)(1000 * 1000), elapsed % (uint64)(1000 * 1000),
