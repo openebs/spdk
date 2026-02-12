@@ -309,7 +309,10 @@ bdev_uring_reap(struct bdev_uring_group_channel *group_ch, int max)
 	enum spdk_bdev_io_status status;
 	struct spdk_bdev_io *bdev_io;
 	struct bdev_uring *uring;
+<<<<<<< HEAD
 	struct io_uring *ring = &group_ch->uring;
+=======
+>>>>>>> 24775a47e (bdev: cherry-pick all aio and uring changes made upstream)
 
 	count = 0;
 	for (i = 0; i < max; i++) {

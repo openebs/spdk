@@ -574,6 +574,21 @@ bdev_aio_io_channel_poll(struct bdev_aio_io_channel *io_ch)
 		} else {
 			spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_FAILED);
 		}
+
+		if (rc < 0) {
+			if (rc == -EAGAIN) {
+				spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_NOMEM);
+			} else if (rc == -ENODEV) {
+				bdev_aio_try_hot_remove(fdisk);
+				spdk_bdev_io_complete_aio_status(bdev_io, rc);
+			} else {
+				AIO_FDISK_ERRLOG(fdisk, "failed to complete: rc %"PRId64"\n", events[i].res);
+				spdk_bdev_io_complete_aio_status(bdev_io, rc);
+			}
+		} else {
+			AIO_FDISK_ERRLOG(fdisk, "failed to complete: rc %"PRId64"\n", events[i].res);
+			spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_FAILED);
+		}
 	}
 
 	return nr;
