@@ -6,6 +6,10 @@
 
 All aliases are now removed from the block device names list upon unregistration.
 
+### vbdev/lvs
+
+Added `vbdev_lvs_bs_bdev_reset` function to reset a bs_dev backing the lvstore.
+
 ## v25.05: NVMe PCIe interrupt mode, DIF insert/strip, mlx5 accel platform driver
 
 ### accel_mlx5

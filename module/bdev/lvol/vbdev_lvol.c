@@ -126,6 +126,38 @@ vbdev_lvs_set_timeout(struct spdk_lvol_store *lvs, uint64_t timeout_in_sec,
 	return spdk_bs_bdev_set_timeout(bs_dev, timeout_in_sec, cb_fn, lvs);
 }
 
+static void
+lvs_bs_dev_reset_cb(struct spdk_bdev_io *bdev_io,
+		    bool success,
+		    void *cb_arg)
+{
+	struct lvstore_reset_cb_args *ctx = cb_arg;
+	if (ctx->cb_fn) {
+		ctx->cb_fn(ctx->lvs, success, ctx->cb_arg);
+	}
+	spdk_bdev_free_io(bdev_io);
+
+	free(ctx);
+}
+
+int
+vbdev_lvs_bs_bdev_reset(struct spdk_lvol_store *lvs,
+			spdk_lvs_reset_completion_cb cb_fn, void *cb_arg)
+{
+	struct spdk_bs_dev *bs_dev = lvs->bs_dev;
+	struct lvstore_reset_cb_args *args;
+	args = calloc(1, sizeof(*args));
+	if (!args) {
+		return -ENOMEM;
+	}
+
+	args->cb_arg = cb_arg;
+	args->cb_fn = cb_fn;
+	args->lvs = lvs;
+
+	return spdk_bs_bdev_reset(bs_dev, lvs_bs_dev_reset_cb, args);
+}
+
 static struct lvol_store_bdev *
 vbdev_get_lvs_bdev_by_bdev(struct spdk_bdev *bdev_orig)
 {
