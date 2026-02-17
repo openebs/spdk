@@ -6,6 +6,7 @@
 	spdk_bdev_create_bs_dev_ext;
 	spdk_bdev_update_bs_blockcnt;
 	spdk_bs_bdev_claim;
+	spdk_bs_bdev_reset;
 
 	local: *;
 };
