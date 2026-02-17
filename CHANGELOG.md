@@ -2,6 +2,10 @@
 
 ## v26.05.1: (Upcoming Release)
 
+### vbdev/lvs
+
+Added `vbdev_lvs_bs_bdev_reset` function to reset a bs_dev backing the lvstore.
+
 ## v26.05
 
 ### accel
