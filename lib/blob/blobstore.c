@@ -10788,3 +10788,71 @@ blob_trace(void)
 	spdk_trace_tpoint_register_relation(TRACE_BDEV_IO_DONE, OBJECT_BLOB_CB_ARG, 0);
 }
 SPDK_TRACE_REGISTER_FN(blob_trace, "blob", TRACE_GROUP_BLOB)
+
+struct spdk_bs_read_super_ctx {
+	struct spdk_blob_store		*bs;
+	struct spdk_bs_super_block	*super;
+
+	spdk_bs_sequence_t		*seq;
+	spdk_bs_op_complete     cb_fn;
+	void                    *cb_arg;
+};
+
+
+static void
+bs_read_super_completion(spdk_bs_sequence_t *sequence,
+			 void *cb_arg, int bserrno)
+{
+	struct spdk_bs_read_super_ctx *ctx = cb_arg;
+
+	ctx->cb_fn(ctx->cb_arg, bserrno);
+	spdk_free(ctx->super);
+	free(ctx);
+}
+
+void
+spdk_bs_read_super(struct spdk_blob_store *bs,
+		   spdk_bs_op_complete cb_fn, void *cb_arg)
+{
+	struct spdk_bs_cpl	cpl;
+	struct spdk_bs_read_super_ctx *ctx;
+	int rc;
+
+	assert(spdk_get_thread() == bs->md_thread);
+
+	ctx = calloc(1, sizeof(struct spdk_bs_read_super_ctx));
+	if (!ctx) {
+		rc = -ENOMEM;
+		goto error;
+	}
+	ctx->bs = bs;
+	ctx->cb_fn = cb_fn;
+	ctx->cb_arg = cb_arg;
+
+	ctx->super = spdk_zmalloc(sizeof(*ctx->super), 0x1000, NULL,
+				  SPDK_ENV_NUMA_ID_ANY, SPDK_MALLOC_DMA);
+
+	if (!ctx->super) {
+		rc = -ENOMEM;
+		goto error;
+	}
+
+	ctx->seq = bs_sequence_start_bs(bs->md_channel, &cpl);
+	if (!ctx->seq) {
+		rc = -ENOMEM;
+		goto error;
+	}
+
+	/* Read the super block */
+	bs_sequence_read_dev(ctx->seq, ctx->super, bs_page_to_lba(bs, 0),
+			     bs_byte_to_lba(bs, sizeof(*ctx->super)),
+			     bs_read_super_completion, ctx);
+	return;
+
+error:
+	if (ctx) {
+		spdk_free(ctx->super);
+		free(ctx);
+	}
+	cb_fn(cb_arg, rc);
+}
