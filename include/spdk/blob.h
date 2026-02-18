@@ -1364,6 +1364,17 @@ spdk_blob_get_cluster_bitmap(struct spdk_blob *blob, spdk_blob_cluster_bitmap_co
 void
 spdk_blob_enable_cluster_unmap(bool is_enabled);
 
+/**
+ *  Attempts to read the superblock of a given blobstore.
+ *
+ *  \param bs blobstore to read superblock
+ *  \param cb_fn Called when the read is complete
+ *  \param cb_arg Argument passed to function cb_fn.
+ */
+void
+spdk_bs_read_super(struct spdk_blob_store *bs,
+		   spdk_bs_op_complete cb_fn, void *cb_arg);
+
 #ifdef __cplusplus
 }
 #endif
