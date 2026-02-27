@@ -927,8 +927,9 @@ thread_update_stats(struct spdk_thread *thread, uint64_t end,
 		thread->stats.idle_tsc += end - start;
 	} else if (rc > 0) {
 		/* Poller status busy */
-		thread->stats.busy_tsc += end - start;
+		thread->stats.busy_tsc = end - start;
 	}
+	thread->stats.msg_cache_count = thread->msg_cache_count;
 	/* Store end time to use it as start time of the next spdk_thread_poll(). */
 	thread->tsc_last = end;
 }
@@ -2613,8 +2614,8 @@ spdk_for_each_channel(void *io_device, spdk_channel_msg fn, void *ctx,
 			ch->dev->for_each_count++;
 			i->cur_thread = thread;
 			i->ch = ch;
-			pthread_mutex_unlock(&g_devlist_mutex);
 			rc = spdk_thread_send_msg(thread, _call_channel, i);
+			pthread_mutex_unlock(&g_devlist_mutex);
 			assert(rc == 0);
 			return;
 		}
@@ -2661,8 +2662,8 @@ spdk_for_each_channel_continue(struct spdk_io_channel_iter *i, int status)
 		if (ch != NULL) {
 			i->cur_thread = thread;
 			i->ch = ch;
-			pthread_mutex_unlock(&g_devlist_mutex);
 			rc = spdk_thread_send_msg(thread, _call_channel, i);
+			pthread_mutex_unlock(&g_devlist_mutex);
 			assert(rc == 0);
 			return;
 		}

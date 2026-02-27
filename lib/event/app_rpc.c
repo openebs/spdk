@@ -203,6 +203,7 @@ _rpc_thread_get_stats(void *arg)
 		spdk_json_write_named_uint64(ctx->w, "active_pollers_count", active_pollers_count);
 		spdk_json_write_named_uint64(ctx->w, "timed_pollers_count", timed_pollers_count);
 		spdk_json_write_named_uint64(ctx->w, "paused_pollers_count", paused_pollers_count);
+		spdk_json_write_named_uint64(ctx->w, "msg_cache_count", stats.msg_cache_count);
 		spdk_json_write_object_end(ctx->w);
 	}
 }

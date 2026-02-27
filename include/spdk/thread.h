@@ -475,6 +475,7 @@ struct spdk_thread *spdk_thread_get_by_id(uint64_t id);
 struct spdk_thread_stats {
 	uint64_t busy_tsc;
 	uint64_t idle_tsc;
+	uint64_t msg_cache_count;
 };
 
 /**
