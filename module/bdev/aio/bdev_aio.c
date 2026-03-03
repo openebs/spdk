@@ -66,6 +66,7 @@ struct bdev_aio_io_channel {
 #endif
 	struct bdev_aio_group_channel		*group_ch;
 	TAILQ_ENTRY(bdev_aio_io_channel)	link;
+	bool					detached;
 };
 
 struct bdev_aio_group_channel {
@@ -543,31 +544,34 @@ bdev_aio_io_channel_poll(struct bdev_aio_io_channel *io_ch)
 		rc = (int)events[i].res;
 		fdisk = fdisk_from_bdev(bdev_io->bdev);
 
-		/* When the block device device is detached from the system, IOs fail with res of 0.
+		/* Since spdk_fd_get_size is not cost-free, we prioritize the check for -EAGAIN as
+		 * it's not likely that this error is returned when a device is detached.
+		 */
+		if (rc == -EAGAIN) {
+			spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_NOMEM);
+			continue;
+		}
+
+		/* When the block device device is detached from the system, IOs fail with different
+		 * observed res such as 0, -EIO or -ENOSPC.
 		 * In this case the ioctl BLKGETSIZE64 yields a device size of 0.
 		 * Note that re-attaching the device will not correct this because the existing fd is
 		 * still invalid.
-		 * When the fd is a file and the mount backing the file is detached, IOs fail
-		 * with a res of -EIO and the ioctl BLKGETSIZE64 yields a device size of 0.
 		 */
-		if (rc == -EIO || rc >= 0) {
-			if (spdk_fd_get_size(fdisk->fd) == 0) {
-				rc = -ENODEV;
-			}
+		if (!io_ch->detached && spdk_fd_get_size(fdisk->fd) == 0) {
+			io_ch->detached = true;
 		}
 
+		if (io_ch->detached) {
+			bdev_aio_try_hot_remove(fdisk);
+			spdk_bdev_io_complete_aio_status(bdev_io, -ENODEV);
+			continue;
+		}
+
+		AIO_FDISK_ERRLOG(fdisk, "failed to complete: rc %"PRId64"\n", events[i].res);
 		if (rc < 0) {
-			if (rc == -EAGAIN) {
-				spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_NOMEM);
-			} else if (rc == -ENODEV) {
-				bdev_aio_try_hot_remove(fdisk);
-				spdk_bdev_io_complete_aio_status(bdev_io, rc);
-			} else {
-				AIO_FDISK_ERRLOG(fdisk, "failed to complete: rc %"PRId64"\n", events[i].res);
-				spdk_bdev_io_complete_aio_status(bdev_io, rc);
-			}
+			spdk_bdev_io_complete_aio_status(bdev_io, rc);
 		} else {
-			AIO_FDISK_ERRLOG(fdisk, "failed to complete: rc %"PRId64"\n", events[i].res);
 			spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_FAILED);
 		}
 	}
