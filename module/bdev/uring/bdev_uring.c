@@ -66,6 +66,7 @@ struct bdev_uring_group_channel {
 	uint64_t				io_pending;
 	struct spdk_poller			*poller;
 	struct io_uring				uring;
+	bool					detached;
 };
 
 struct bdev_uring_task {
@@ -300,7 +301,7 @@ bdev_uring_destruct(void *ctx)
 }
 
 static int
-bdev_uring_reap(struct io_uring *ring, int max)
+bdev_uring_reap(struct bdev_uring_group_channel *group_ch, int max)
 {
 	int i, count, rc;
 	struct io_uring_cqe *cqe;
@@ -308,6 +309,7 @@ bdev_uring_reap(struct io_uring *ring, int max)
 	enum spdk_bdev_io_status status;
 	struct spdk_bdev_io *bdev_io;
 	struct bdev_uring *uring;
+	struct io_uring *ring = &group_ch->uring;
 
 	count = 0;
 	for (i = 0; i < max; i++) {
@@ -323,24 +325,25 @@ bdev_uring_reap(struct io_uring *ring, int max)
 		bdev_io = spdk_bdev_io_from_ctx(uring_task);
 		rc = cqe->res;
 		if (spdk_unlikely(rc != (signed)uring_task->len)) {
-			/* When the block device device is detached from the system, IOs fail with res of 0.
-			 * In this case the ioctl BLKGETSIZE64 yields a device size of 0.
-			 * Note that re-attaching the device will not correct this because the existing fd is
-			 * still invalid.
-			 * When the fd is a file and the mount backing the file is detached, IOs fail
-			 * with a res of -EIO and the ioctl BLKGETSIZE64 yields a device size of 0.
-			 */
 			uring = uring_from_bdev(bdev_io->bdev);
-			if (rc == -EIO || rc >= 0) {
-				if (spdk_fd_get_size(uring->fd) == 0) {
-					rc = -ENODEV;
-				}
-			}
 
+			/* Since spdk_fd_get_size is not cost-free, we prioritize the check for -EAGAIN/-EWOULDBLOCK
+			 * as it's not likely that these errors are returned when a device is detached.
+			 */
 			if (rc == -EAGAIN || rc == -EWOULDBLOCK) {
 				status = SPDK_BDEV_IO_STATUS_NOMEM;
 			} else {
-				if (rc == -ENODEV) {
+				/* When the block device device is detached from the system, IOs fail with different
+				 * observed res such as 0, -EIO or -ENOSPC.
+				 * In this case the ioctl BLKGETSIZE64 yields a device size of 0.
+				 * Note that re-attaching the device will not correct this because the existing fd is
+				 * still invalid.
+				 */
+				if (!group_ch->detached && spdk_fd_get_size(uring->fd) == 0) {
+					group_ch->detached = true;
+				}
+
+				if (group_ch->detached) {
 					bdev_uring_try_hot_remove(uring);
 				} else {
 					URING_ERRLOG(uring, "I/O failed with error %d\n", rc);
@@ -384,7 +387,7 @@ bdev_uring_group_poll(void *arg)
 	to_complete = group_ch->io_inflight;
 	count = 0;
 	if (to_complete > 0) {
-		count = bdev_uring_reap(&group_ch->uring, to_complete);
+		count = bdev_uring_reap(group_ch, to_complete);
 	}
 
 	if (count + to_submit > 0) {
