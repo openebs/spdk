@@ -255,6 +255,7 @@ blob_init(void)
 {
 	struct spdk_blob_store *bs;
 	struct spdk_bs_dev *dev;
+	struct spdk_power_failure_thresholds thresholds = {};
 
 	dev = init_dev();
 
@@ -263,6 +264,28 @@ blob_init(void)
 	spdk_bs_init(dev, NULL, bs_op_with_handle_complete, NULL);
 	poll_threads();
 	CU_ASSERT(g_bserrno == -EINVAL);
+
+	/* should handle unmap failure */
+	dev = init_dev();
+	thresholds.unmap_threshold = 1;
+	dev_set_power_failure_thresholds(thresholds);
+	spdk_bs_init(dev, NULL, bs_op_with_handle_complete, NULL);
+	poll_threads();
+	CU_ASSERT(g_bserrno != 0);
+	SPDK_CU_ASSERT_FATAL(g_bs == NULL);
+	memset(&thresholds, 0, sizeof(thresholds));
+	dev_reset_power_failure_event();
+
+	/* should handle super block write failure */
+	dev = init_dev();
+	thresholds.write_threshold = 1;
+	dev_set_power_failure_thresholds(thresholds);
+	spdk_bs_init(dev, NULL, bs_op_with_handle_complete, NULL);
+	poll_threads();
+	CU_ASSERT(g_bserrno != 0);
+	SPDK_CU_ASSERT_FATAL(g_bs == NULL);
+	memset(&thresholds, 0, sizeof(thresholds));
+	dev_reset_power_failure_event();
 
 	dev = init_dev();
 	spdk_bs_init(dev, NULL, bs_op_with_handle_complete, NULL);
