@@ -5682,17 +5682,32 @@ bs_init_persist_super_cpl(spdk_bs_sequence_t *seq, void *cb_arg, int bserrno)
 {
 	struct spdk_bs_load_ctx *ctx = cb_arg;
 
-	ctx->bs->used_clusters = spdk_bit_pool_create_from_array(ctx->used_clusters);
 	spdk_free(ctx->super);
-	free(ctx);
 
-	bs_sequence_finish(seq, bserrno);
+	if (bserrno != 0) {
+		bs_sequence_finish(seq, bserrno);
+		bs_free(ctx->bs);
+		spdk_bit_array_free(&ctx->used_clusters);
+	} else {
+		ctx->bs->used_clusters = spdk_bit_pool_create_from_array(ctx->used_clusters);
+		bs_sequence_finish(seq, bserrno);
+	}
+	free(ctx);
 }
 
 static void
 bs_init_trim_cpl(spdk_bs_sequence_t *seq, void *cb_arg, int bserrno)
 {
 	struct spdk_bs_load_ctx *ctx = cb_arg;
+
+	if (bserrno != 0) {
+		spdk_free(ctx->super);
+		bs_sequence_finish(seq, bserrno);
+		bs_free(ctx->bs);
+		spdk_bit_array_free(&ctx->used_clusters);
+		free(ctx);
+		return;
+	}
 
 	/* Write super block */
 	bs_sequence_write_dev(seq, ctx->super, bs_page_to_lba(ctx->bs, 0),
@@ -5705,7 +5720,7 @@ spdk_bs_init(struct spdk_bs_dev *dev, struct spdk_bs_opts *o,
 	     spdk_bs_op_with_handle_complete cb_fn, void *cb_arg)
 {
 	struct spdk_bs_load_ctx *ctx;
-	struct spdk_blob_store	*bs;
+	struct spdk_blob_store	*bs = NULL;
 	struct spdk_bs_cpl	cpl;
 	spdk_bs_sequence_t	*seq;
 	spdk_bs_batch_t		*batch;
@@ -5722,31 +5737,26 @@ spdk_bs_init(struct spdk_bs_dev *dev, struct spdk_bs_opts *o,
 	if ((dev->phys_blocklen % dev->blocklen) != 0) {
 		SPDK_ERRLOG("unsupported dev block length of %d\n",
 			    dev->blocklen);
-		dev->destroy(dev);
-		cb_fn(cb_arg, NULL, -EINVAL);
-		return;
+		rc = -EINVAL;
+		goto out;
 	}
 
 	spdk_bs_opts_init(&opts, sizeof(opts));
 	if (o) {
 		if (bs_opts_copy(o, &opts)) {
-			dev->destroy(dev);
-			cb_fn(cb_arg, NULL, -EINVAL);
-			return;
+			rc = -EINVAL;
+			goto out;
 		}
 	}
 
 	if (bs_opts_verify(&opts) != 0) {
-		dev->destroy(dev);
-		cb_fn(cb_arg, NULL, -EINVAL);
-		return;
+		rc = -EINVAL;
+		goto out;
 	}
 
 	rc = bs_alloc(dev, &opts, &bs, &ctx);
 	if (rc) {
-		dev->destroy(dev);
-		cb_fn(cb_arg, NULL, rc);
-		return;
+		goto out;
 	}
 
 	if (opts.num_md_pages == SPDK_BLOB_OPTS_NUM_MD_PAGES) {
@@ -5762,29 +5772,17 @@ spdk_bs_init(struct spdk_bs_dev *dev, struct spdk_bs_opts *o,
 	}
 	rc = spdk_bit_array_resize(&bs->used_md_pages, bs->md_len);
 	if (rc < 0) {
-		spdk_free(ctx->super);
-		free(ctx);
-		bs_free(bs);
-		cb_fn(cb_arg, NULL, -ENOMEM);
-		return;
+		goto out;
 	}
 
 	rc = spdk_bit_array_resize(&bs->used_blobids, bs->md_len);
 	if (rc < 0) {
-		spdk_free(ctx->super);
-		free(ctx);
-		bs_free(bs);
-		cb_fn(cb_arg, NULL, -ENOMEM);
-		return;
+		goto out;
 	}
 
 	rc = spdk_bit_array_resize(&bs->open_blobids, bs->md_len);
 	if (rc < 0) {
-		spdk_free(ctx->super);
-		free(ctx);
-		bs_free(bs);
-		cb_fn(cb_arg, NULL, -ENOMEM);
-		return;
+		goto out;
 	}
 
 	memcpy(ctx->super->signature, SPDK_BS_SUPER_BLOCK_SIG,
@@ -5857,12 +5855,8 @@ spdk_bs_init(struct spdk_bs_dev *dev, struct spdk_bs_opts *o,
 		SPDK_ERRLOG("Blobstore metadata cannot use more clusters than is available, "
 			    "please decrease number of pages reserved for metadata "
 			    "or increase cluster size.\n");
-		spdk_free(ctx->super);
-		spdk_bit_array_free(&ctx->used_clusters);
-		free(ctx);
-		bs_free(bs);
-		cb_fn(cb_arg, NULL, -ENOMEM);
-		return;
+		rc = -ENOMEM;
+		goto out;
 	}
 	/* Claim all of the clusters used by the metadata */
 	for (i = 0; i < num_md_clusters; i++) {
@@ -5879,11 +5873,8 @@ spdk_bs_init(struct spdk_bs_dev *dev, struct spdk_bs_opts *o,
 
 	seq = bs_sequence_start_bs(bs->md_channel, &cpl);
 	if (!seq) {
-		spdk_free(ctx->super);
-		free(ctx);
-		bs_free(bs);
-		cb_fn(cb_arg, NULL, -ENOMEM);
-		return;
+		rc = -ENOMEM;
+		goto out;
 	}
 
 	batch = bs_sequence_to_batch(seq, bs_init_trim_cpl, ctx);
@@ -5908,6 +5899,18 @@ spdk_bs_init(struct spdk_bs_dev *dev, struct spdk_bs_opts *o,
 	}
 
 	bs_batch_close(batch);
+	return;
+
+out:
+	if (bs) {
+		bs_free(ctx->bs);
+		spdk_free(ctx->super);
+		spdk_bit_array_free(&ctx->used_clusters);
+		free(ctx);
+	} else {
+		dev->destroy(dev);
+	}
+	cb_fn(cb_arg, NULL, rc);
 }
 
 /* END spdk_bs_init */
