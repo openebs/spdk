@@ -1804,7 +1804,7 @@ _vbdev_lvs_examine_cb(void *arg, struct spdk_lvol_store *lvol_store, int lvserrn
 		_vbdev_lvs_examine_done(ori_req, lvserrno);
 		goto end;
 	} else if (lvserrno != 0) {
-		SPDK_INFOLOG(vbdev_lvol, "Lvol store not found on %s\n", req->base_bdev->name);
+		SPDK_INFOLOG(vbdev_lvol, "Lvol store not found on %s: %d\n", req->base_bdev->name, lvserrno);
 		/* On error blobstore destroys bs_dev itself */
 		_vbdev_lvs_examine_done(ori_req, lvserrno);
 		goto end;

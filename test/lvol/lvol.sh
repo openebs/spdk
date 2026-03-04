@@ -14,6 +14,7 @@ timing_enter basic
 run_test "lvol_basic" $rootdir/test/lvol/basic.sh
 run_test "lvol_resize" $rootdir/test/lvol/resize.sh
 run_test "lvol_hotremove" $rootdir/test/lvol/hotremove.sh
+run_test "lvol_disk_errors" $rootdir/test/lvol/disk_errors.sh
 run_test "lvol_tasting" $rootdir/test/lvol/tasting.sh
 run_test "lvol_snapshot_clone" $rootdir/test/lvol/snapshot_clone.sh
 run_test "lvol_rename" $rootdir/test/lvol/rename.sh
