@@ -1768,8 +1768,16 @@ posix_sock_is_connected(struct spdk_sock *_sock)
 	struct spdk_posix_sock *sock = __posix_sock(_sock);
 	uint8_t byte;
 	int rc;
+	struct pollfd pfd;
 
 	if (posix_sock_is_connecting(sock)) {
+		return false;
+	}
+
+	pfd.fd = sock->fd;
+	pfd.events = 0;
+	pfd.revents = 0;
+	if (poll(&pfd, 1, 0) >= 0 && (pfd.revents & POLLHUP)) {
 		return false;
 	}
 
