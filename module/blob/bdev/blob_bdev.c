@@ -570,3 +570,50 @@ spdk_bdev_create_bs_dev_ext(const char *bdev_name, spdk_bdev_event_cb_t event_cb
 {
 	return spdk_bdev_create_bs_dev(bdev_name, true, NULL, 0, event_cb, event_ctx, bs_dev);
 }
+
+int
+spdk_bs_bdev_set_timeout(struct spdk_bs_dev *bs_dev, uint64_t timeout_in_sec,
+			 spdk_bdev_io_timeout_cb cb_fn, void *cb_arg)
+{
+	struct blob_bdev *blob_bdev = (struct blob_bdev *)bs_dev;
+
+	return spdk_bdev_set_timeout(blob_bdev->desc, timeout_in_sec, cb_fn, cb_arg);
+}
+
+struct bs_dev_reset_ctx {
+	struct spdk_io_channel *ch;
+	spdk_bdev_io_completion_cb cb_fn;
+	void *cb_arg;
+};
+
+static void
+bs_dev_reset_cb(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg)
+{
+	struct bs_dev_reset_ctx *ctx = cb_arg;
+
+	spdk_put_io_channel(ctx->ch);
+	ctx->cb_fn(bdev_io, success, ctx->cb_arg);
+	free(ctx);
+}
+
+int
+spdk_bs_dev_reset(struct spdk_bs_dev *bs_dev, spdk_bdev_io_completion_cb cb_fn, void *cb_arg
+		 )
+{
+	struct blob_bdev *blob_bdev = (struct blob_bdev *)bs_dev;
+	struct spdk_io_channel	*ch = spdk_bdev_get_io_channel(blob_bdev->desc);
+
+	struct bs_dev_reset_ctx *ctx = calloc(1, sizeof(*ctx));
+	if (!ctx) {
+		spdk_put_io_channel(ch);
+		return -ENOMEM;
+	}
+
+	ctx->ch = ch;
+	ctx->cb_fn = cb_fn;
+	ctx->cb_arg = cb_arg;
+
+	return spdk_bdev_reset(blob_bdev->desc, ch, bs_dev_reset_cb, ctx);
+
+}
+

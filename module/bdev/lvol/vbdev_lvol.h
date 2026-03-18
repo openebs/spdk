@@ -173,4 +173,46 @@ int vbdev_lvol_shallow_copy(struct spdk_lvol *lvol, const char *bdev_name,
 void vbdev_lvol_set_external_parent(struct spdk_lvol *lvol, const char *esnap_name,
 				    spdk_lvol_op_complete cb_fn, void *cb_arg);
 
+
+typedef void (*spdk_lvs_timeout_cb)(struct spdk_lvol_store *lvs, void *cb_arg);
+
+struct lvstore_timeout_cb_args {
+	struct spdk_lvol_store *lvs;
+	spdk_lvs_timeout_cb cb_fn;
+	void *cb_arg;
+};
+
+/**
+ * \brief Sets IO timeout on bs_dev backing the lvstore.
+ *
+ * \param lvs Pointer to lvolstore
+ * \param Timeout value to be set
+ * \param lvs IO timeout callback function
+ * \param addition callback arguments
+ */
+int vbdev_lvs_set_timeout(struct spdk_lvol_store *lvs, uint64_t timeout_in_sec,
+			  spdk_lvs_timeout_cb cb_fn, void *cb_arg);
+
+typedef void (*spdk_lvs_reset_completion_cb)(struct spdk_lvol_store *lvs,
+		bool success, void *cb_arg);
+
+struct lvstore_reset_cb_args {
+	struct spdk_lvol_store *lvs;
+	struct spdk_io_channel *ch;
+	spdk_lvs_reset_completion_cb cb_fn;
+	void *cb_arg;
+};
+
+/**
+ * \brief Starts reset on given LVS.
+ *
+ * \param lvs Pointer to lvolstore
+ * \param cb_fn callback function to be called when lvstore reset completes
+ * \param cb_arg addition callback arguments
+ *
+ * \return 0 if operation starts correctly, negative errno on failure.
+ */
+int vbdev_lvs_bs_bdev_reset(struct spdk_lvol_store *lvs,
+			    spdk_lvs_reset_completion_cb cb_fn, void *cb_arg);
+
 #endif /* SPDK_VBDEV_LVOL_H */

@@ -362,6 +362,17 @@ void spdk_bs_grow_live(struct spdk_blob_store *bs,
 		       spdk_bs_op_complete cb_fn, void *cb_arg);
 
 /**
+ *  Attempts to read the superblock of a given blobstore.
+ *
+ *  \param bs blobstore to read superblock
+ *  \param cb_fn Called when the read is complete
+ *  \param cb_arg Argument passed to function cb_fn.
+ */
+void
+spdk_bs_read_super(struct spdk_blob_store *bs,
+		   spdk_bs_op_complete cb_fn, void *cb_arg);
+
+/**
  * Initialize a blobstore on the given device.
  *
  * \param dev Blobstore block device.
