@@ -5856,7 +5856,7 @@ bs_destroy_trim_cpl(spdk_bs_sequence_t *seq, void *cb_arg, int bserrno)
 
 	free(ctx);
 
-	if (bserrno != 0) {
+	if (bserrno != 0 && bserrno != -EIO) {
 		bs_sequence_finish(seq, bserrno);
 		return;
 	}
