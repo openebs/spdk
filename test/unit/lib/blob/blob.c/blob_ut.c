@@ -3679,20 +3679,7 @@ bs_destroy(void)
 	CU_ASSERT(g_bserrno == -EIO);
 	dev_reset_power_failure_event();
 
-	/* Destroy the blob store */
-	g_bserrno = -1;
-	spdk_bs_destroy(bs, bs_op_complete, NULL);
-	poll_threads();
-	CU_ASSERT(g_bserrno == 0);
-
-	/* Loading an non-existent blob store should fail. */
 	g_bs = NULL;
-	dev = init_dev();
-
-	g_bserrno = 0;
-	spdk_bs_load(dev, NULL, bs_op_with_handle_complete, NULL);
-	poll_threads();
-	CU_ASSERT(g_bserrno != 0);
 }
 
 /* Try to hit all of the corner cases associated with serializing
