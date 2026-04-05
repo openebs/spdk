@@ -727,6 +727,27 @@ int spdk_blob_get_clones(struct spdk_blob_store *bs, spdk_blob_id blobid, spdk_b
 			 size_t *count);
 
 /**
+ * Provide table with blob id's of clones are dependent on specified snapshot.
+ * If the clone_attr exists in the blob xattr, then it's a clone.
+ *
+ * Ids array should be allocated and the count parameter set to the number of
+ * id's it can store, before calling this function.
+ *
+ * If ids is NULL or count parameter is not sufficient to handle ids of all
+ * clones, -ENOMEM error is returned and count parameter is updated to the
+ * total number of clones.
+ *
+ * \param bs blobstore.
+ * \param blobid Snapshots blob id.
+ * \param ids Array of the clone ids or NULL to get required size in count.
+ * \param count Size of ids. After call it is updated to the number of clones.
+ *
+ * \return -ENOMEM if count is not sufficient to store all clones.
+ */
+int spdk_blob_get_real_clones(struct spdk_blob_store *bs, spdk_blob_id blobid, spdk_blob_id *ids,
+			      size_t *count, const char *clone_attr);
+
+/**
  * Get the blob id for the parent snapshot of this blob.
  *
  * \param bs blobstore.
