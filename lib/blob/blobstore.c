@@ -9971,6 +9971,42 @@ spdk_blob_get_parent_snapshot(struct spdk_blob_store *bs, spdk_blob_id blob_id)
 }
 
 int
+spdk_blob_get_real_clones(struct spdk_blob_store *bs, spdk_blob_id blobid, spdk_blob_id *ids,
+			  size_t *count)
+{
+	struct spdk_blob_list *snapshot_entry, *clone_entry;
+	size_t n;
+
+	snapshot_entry = bs_get_snapshot_entry(bs, blobid);
+	if (snapshot_entry == NULL) {
+		*count = 0;
+		return 0;
+	}
+
+	if (ids == NULL || *count < snapshot_entry->clone_count) {
+		n = 0;
+		TAILQ_FOREACH(clone_entry, &snapshot_entry->clones, link) {
+			if (bs_get_snapshot_entry(bs, clone_entry->id)) {
+				n++;
+			}
+		}
+		*count = n;
+
+		return -ENOMEM;
+	}
+	*count = snapshot_entry->clone_count;
+
+	n = 0;
+	TAILQ_FOREACH(clone_entry, &snapshot_entry->clones, link) {
+		if (bs_get_snapshot_entry(bs, clone_entry->id)) {
+			ids[n++] = clone_entry->id;
+		}
+	}
+
+	return 0;
+}
+
+int
 spdk_blob_get_clones(struct spdk_blob_store *bs, spdk_blob_id blobid, spdk_blob_id *ids,
 		     size_t *count)
 {
