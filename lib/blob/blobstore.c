@@ -9803,6 +9803,22 @@ blob_get_xattr_value(struct spdk_blob *blob, const char *name,
 	return -ENOENT;
 }
 
+static bool
+blob_xattr_exists(struct spdk_blob *blob, const char *name, bool internal)
+{
+	struct spdk_xattr	*xattr;
+	struct spdk_xattr_tailq *xattrs;
+
+	xattrs = internal ? &blob->xattrs_internal : &blob->xattrs;
+
+	TAILQ_FOREACH(xattr, xattrs, link) {
+		if (!strcmp(name, xattr->name)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 int
 spdk_blob_get_xattr_value(struct spdk_blob *blob, const char *name,
 			  const void **value, size_t *value_len)
@@ -9968,6 +9984,45 @@ spdk_blob_get_parent_snapshot(struct spdk_blob_store *bs, spdk_blob_id blob_id)
 	}
 
 	return SPDK_BLOBID_INVALID;
+}
+
+int
+spdk_blob_get_real_clones(struct spdk_blob_store *bs, spdk_blob_id blobid, spdk_blob_id *ids,
+			  size_t *count, const char *clone_attr)
+{
+	struct spdk_blob_list *snapshot_entry, *clone_entry;
+	size_t n;
+	struct spdk_blob *blob;
+
+	snapshot_entry = bs_get_snapshot_entry(bs, blobid);
+	if (snapshot_entry == NULL) {
+		*count = 0;
+		return 0;
+	}
+
+	if (ids == NULL || *count < snapshot_entry->clone_count) {
+		n = 0;
+		TAILQ_FOREACH(clone_entry, &snapshot_entry->clones, link) {
+			blob = blob_lookup(bs, clone_entry->id);
+			if (blob && blob_xattr_exists(blob, clone_attr, false)) {
+				n++;
+			}
+		}
+		*count = n;
+
+		return -ENOMEM;
+	}
+	*count = snapshot_entry->clone_count;
+
+	n = 0;
+	TAILQ_FOREACH(clone_entry, &snapshot_entry->clones, link) {
+		blob = blob_lookup(bs, clone_entry->id);
+		if (blob && blob_xattr_exists(blob, clone_attr, false)) {
+			ids[n++] = clone_entry->id;
+		}
+	}
+
+	return 0;
 }
 
 int
