@@ -2506,6 +2506,20 @@ spdk_lvol_get_by_uuid(const struct spdk_uuid *uuid)
 }
 
 struct spdk_lvol *
+spdk_lvs_lvol_get_by_uuid(const struct spdk_lvol_store *lvs, const struct spdk_uuid *uuid)
+{
+	struct spdk_lvol *lvol;
+
+	TAILQ_FOREACH(lvol, &lvs->lvols, link) {
+		if (spdk_uuid_compare(uuid, &lvol->uuid) == 0) {
+			return lvol;
+		}
+	}
+
+	return NULL;
+}
+
+struct spdk_lvol *
 spdk_lvol_get_by_names(const char *lvs_name, const char *lvol_name)
 {
 	struct spdk_lvol_store *lvs;

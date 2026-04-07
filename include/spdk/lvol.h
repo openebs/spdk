@@ -396,6 +396,16 @@ int spdk_lvol_iter_immediate_clones(struct spdk_lvol *lvol, spdk_lvol_iter_cb cb
 struct spdk_lvol *spdk_lvol_get_by_uuid(const struct spdk_uuid *uuid);
 
 /**
+ * Get the lvol that has a particular UUID, from the specified lvolstore.
+ *
+ * \param lvs The lvol's lvolstore.
+ * \param uuid The lvol's UUID.
+ * \return A pointer to the requested lvol on success, else NULL.
+ */
+struct spdk_lvol *spdk_lvs_lvol_get_by_uuid(const struct spdk_lvol_store *lvs,
+		const struct spdk_uuid *uuid);
+
+/**
  * Get the lvol that has the specified name in the specified lvolstore.
  *
  * \param lvs_name Name of the lvolstore.
