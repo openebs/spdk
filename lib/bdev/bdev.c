@@ -620,6 +620,15 @@ bdev_wait_for_examine_cb(void *arg)
 	return SPDK_POLLER_BUSY;
 }
 
+static void
+bdev_wait_for_examine_msg_cb(void *arg)
+{
+	struct spdk_bdev_wait_for_examine_ctx *ctx = arg;
+
+	ctx->cb_fn(ctx->cb_arg);
+	free(ctx);
+}
+
 int
 spdk_bdev_wait_for_examine(spdk_bdev_wait_for_examine_cb cb_fn, void *cb_arg)
 {
@@ -631,7 +640,22 @@ spdk_bdev_wait_for_examine(spdk_bdev_wait_for_examine_cb cb_fn, void *cb_arg)
 	}
 	ctx->cb_fn = cb_fn;
 	ctx->cb_arg = cb_arg;
-	ctx->poller = SPDK_POLLER_REGISTER(bdev_wait_for_examine_cb, ctx, 0);
+
+	/* Fast path: if all examine actions are already complete, defer the
+	 * callback via a thread message instead of installing a poller. The
+	 * message preserves the async contract (callback runs on the next
+	 * thread poll, not during this call) and avoids installing an
+	 * always-readable eventfd (period=0) that would spin fd_group_wait()
+	 * in interrupt mode. A 1 ms periodic poller is still used when
+	 * examine is genuinely asynchronous; its timerfd fires in both poll
+	 * and interrupt modes. */
+	if (bdev_module_all_actions_completed()) {
+		spdk_thread_send_msg(spdk_get_thread(),
+				     bdev_wait_for_examine_msg_cb, ctx);
+		return 0;
+	}
+
+	ctx->poller = SPDK_POLLER_REGISTER(bdev_wait_for_examine_cb, ctx, 1000);
 
 	return 0;
 }
