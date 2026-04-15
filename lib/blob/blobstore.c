@@ -9992,55 +9992,36 @@ spdk_blob_get_parent_snapshot(struct spdk_blob_store *bs, spdk_blob_id blob_id)
 }
 
 void
-spdk_blob_get_real_clones(struct spdk_blob_store *bs, spdk_blob_id blobid, const char *clone_attr,
-			  const char *snap_uuid,
+spdk_blob_get_real_clones(struct spdk_blob_store *bs, const char *clone_attr, const char *snap_uuid,
 			  spdk_bs_blob_clone_iter_cb cb_fn, void *cb_arg)
 {
-	struct spdk_blob_list *snapshot_entry, *clone_entry;
 	struct spdk_blob *blob;
 	int uuid_len = SPDK_UUID_STRING_LEN - 1;
 
-	snapshot_entry = bs_get_snapshot_entry(bs, blobid);
-	if (snapshot_entry == NULL) {
-		return;
-	}
-
-	TAILQ_FOREACH(clone_entry, &snapshot_entry->clones, link) {
-		blob = blob_lookup(bs, clone_entry->id);
-		if (!blob) {
+	RB_FOREACH(blob, spdk_blob_tree, &bs->open_blobs) {
+		if (!spdk_blob_is_clone(blob)) {
 			continue;
 		}
 		if (blob_xattr_matches(blob, clone_attr, snap_uuid, uuid_len, false)) {
-			cb_fn(cb_arg, clone_entry->id);
-		} else {
-			spdk_blob_get_real_clones(bs, clone_entry->id, clone_attr, snap_uuid, cb_fn, cb_arg);
+			cb_fn(cb_arg, blob->id);
 		}
 	}
 }
 
 size_t
-spdk_blob_count_real_clones(struct spdk_blob_store *bs, spdk_blob_id blobid, const char *clone_attr,
+spdk_blob_count_real_clones(struct spdk_blob_store *bs, const char *clone_attr,
 			    const char *snap_uuid)
 {
-	struct spdk_blob_list *snapshot_entry, *clone_entry;
 	size_t count = 0;
 	struct spdk_blob *blob;
 	int uuid_len = SPDK_UUID_STRING_LEN - 1;
 
-	snapshot_entry = bs_get_snapshot_entry(bs, blobid);
-	if (snapshot_entry == NULL) {
-		return 0;
-	}
-
-	TAILQ_FOREACH(clone_entry, &snapshot_entry->clones, link) {
-		blob = blob_lookup(bs, clone_entry->id);
-		if (!blob) {
+	RB_FOREACH(blob, spdk_blob_tree, &bs->open_blobs) {
+		if (!spdk_blob_is_clone(blob)) {
 			continue;
 		}
 		if (blob_xattr_matches(blob, clone_attr, snap_uuid, uuid_len, false)) {
 			count++;
-		} else {
-			count += spdk_blob_count_real_clones(bs, clone_entry->id, clone_attr, snap_uuid);
 		}
 	}
 
