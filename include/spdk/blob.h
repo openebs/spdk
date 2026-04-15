@@ -731,14 +731,13 @@ int spdk_blob_get_clones(struct spdk_blob_store *bs, spdk_blob_id blobid, spdk_b
  * If the clone_attr exists in the blob xattr, then it's a clone.
  *
  * \param bs blobstore.
- * \param blobid Snapshots blob id.
  * \param clone_attr Name of the attribute which denotes a clone.
  * \param snap_uuid Uuid of the snapshot.
  *
  * \return count of all clones from snapshots.
  */
 size_t
-spdk_blob_count_real_clones(struct spdk_blob_store *bs, spdk_blob_id blobid, const char *clone_attr,
+spdk_blob_count_real_clones(struct spdk_blob_store *bs, const char *clone_attr,
 			    const char *snap_uuid);
 
 /**
@@ -755,14 +754,13 @@ typedef void (*spdk_bs_blob_clone_iter_cb)(void *cb_arg, spdk_blob_id blob_id);
  * If the clone_attr exists in the blob xattr, then it's a clone.
  *
  * \param bs blobstore.
- * \param blobid Blob id of the clone.
  * \param clone_attr Name of the attribute which denotes a clone.
  * \param snap_uuid Uuid of the snapshot.
  * \param cb_fn Callback for each clone.
  * \param cb_arg Context for each callback.
  */
 void
-spdk_blob_get_real_clones(struct spdk_blob_store *bs, spdk_blob_id blobid, const char *clone_attr,
+spdk_blob_get_real_clones(struct spdk_blob_store *bs, const char *clone_attr,
 			  const char *snap_uuid,
 			  spdk_bs_blob_clone_iter_cb cb_fn, void *cb_arg);
 
