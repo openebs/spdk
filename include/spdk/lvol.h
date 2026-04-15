@@ -388,6 +388,16 @@ void spdk_lvol_close(struct spdk_lvol *lvol, spdk_lvol_op_complete cb_fn, void *
 int spdk_lvol_iter_immediate_clones(struct spdk_lvol *lvol, spdk_lvol_iter_cb cb_fn, void *cb_arg);
 
 /**
+ * Get the lvol that has a particular blob id, from the specified lvolstore.
+ *
+ * \param lvs The lvol's lvolstore.
+ * \param uuid The lvol's blobstore blob id.
+ * \return A pointer to the requested lvol on success, else NULL.
+ */
+struct spdk_lvol *
+lvs_get_lvol_by_blob_id(struct spdk_lvol_store *lvs, spdk_blob_id blob_id);
+
+/**
  * Get the lvol that has a particular UUID.
  *
  * \param uuid The lvol's UUID.
