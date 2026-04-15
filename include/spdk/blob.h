@@ -727,25 +727,44 @@ int spdk_blob_get_clones(struct spdk_blob_store *bs, spdk_blob_id blobid, spdk_b
 			 size_t *count);
 
 /**
- * Provide table with blob id's of clones are dependent on specified snapshot.
+ * Get a count of all snapshot clones.
  * If the clone_attr exists in the blob xattr, then it's a clone.
- *
- * Ids array should be allocated and the count parameter set to the number of
- * id's it can store, before calling this function.
- *
- * If ids is NULL or count parameter is not sufficient to handle ids of all
- * clones, -ENOMEM error is returned and count parameter is updated to the
- * total number of clones.
  *
  * \param bs blobstore.
  * \param blobid Snapshots blob id.
- * \param ids Array of the clone ids or NULL to get required size in count.
- * \param count Size of ids. After call it is updated to the number of clones.
+ * \param clone_attr Name of the attribute which denotes a clone.
+ * \param snap_uuid Uuid of the snapshot.
  *
- * \return -ENOMEM if count is not sufficient to store all clones.
+ * \return count of all clones from snapshots.
  */
-int spdk_blob_get_real_clones(struct spdk_blob_store *bs, spdk_blob_id blobid, spdk_blob_id *ids,
-			      size_t *count, const char *clone_attr);
+size_t
+spdk_blob_count_real_clones(struct spdk_blob_store *bs, spdk_blob_id blobid, const char *clone_attr,
+			    const char *snap_uuid);
+
+/**
+ * Callback definition for spdk_bs_blob_clone_iter_cb.
+ *
+ * \param lvol An iterated lvol.
+ * \param cb_arg Opaque context passed to spdk_bs_blob_clone_iter_cb().
+ * \param blob_id The blob id of the clone.
+ */
+typedef void (*spdk_bs_blob_clone_iter_cb)(void *cb_arg, spdk_blob_id blob_id);
+
+/**
+ * Iterate all snapshot clones.
+ * If the clone_attr exists in the blob xattr, then it's a clone.
+ *
+ * \param bs blobstore.
+ * \param blobid Blob id of the clone.
+ * \param clone_attr Name of the attribute which denotes a clone.
+ * \param snap_uuid Uuid of the snapshot.
+ * \param cb_fn Callback for each clone.
+ * \param cb_arg Context for each callback.
+ */
+void
+spdk_blob_get_real_clones(struct spdk_blob_store *bs, spdk_blob_id blobid, const char *clone_attr,
+			  const char *snap_uuid,
+			  spdk_bs_blob_clone_iter_cb cb_fn, void *cb_arg);
 
 /**
  * Get the blob id for the parent snapshot of this blob.
