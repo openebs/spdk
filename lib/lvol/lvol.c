@@ -41,7 +41,6 @@ static inline int lvs_opts_copy(const struct spdk_lvs_opts *src, struct spdk_lvs
 static int lvs_esnap_bs_dev_create(void *bs_ctx, void *blob_ctx, struct spdk_blob *blob,
 				   const void *esnap_id, uint32_t id_len,
 				   struct spdk_bs_dev **_bs_dev);
-static struct spdk_lvol *lvs_get_lvol_by_blob_id(struct spdk_lvol_store *lvs, spdk_blob_id blob_id);
 static void lvs_degraded_lvol_set_add(struct spdk_lvs_degraded_lvol_set *degraded_set,
 				      struct spdk_lvol *lvol);
 static void lvs_degraded_lvol_set_remove(struct spdk_lvs_degraded_lvol_set *degraded_set,
@@ -2102,7 +2101,7 @@ spdk_lvs_grow(struct spdk_bs_dev *bs_dev, spdk_lvs_op_with_handle_complete cb_fn
 	spdk_bs_grow(bs_dev, &opts, lvs_load_cb, req);
 }
 
-static struct spdk_lvol *
+struct spdk_lvol *
 lvs_get_lvol_by_blob_id(struct spdk_lvol_store *lvs, spdk_blob_id blob_id)
 {
 	struct spdk_lvol *lvol;
