@@ -10306,6 +10306,13 @@ bs_grow_live_load_super_cpl(spdk_bs_sequence_t *seq, void *cb_arg, int bserrno)
 
 	dev_size = ctx->bs->dev->blockcnt * ctx->bs->dev->blocklen;
 	total_clusters = dev_size / ctx->super->cluster_size;
+	/*
+	 * If the metadata page size is not set, then it means that the blobstore was created with an older version of SPDK.
+	 * In that case, we can assume that the page size is equal to SPDK_BS_PAGE_SIZE, since that's what it was in older versions.
+	 */
+	if (ctx->super->md_page_size == 0) {
+		ctx->super->md_page_size = SPDK_BS_PAGE_SIZE;
+	}
 	used_cluster_mask_len = spdk_divide_round_up(sizeof(struct spdk_bs_md_mask) +
 				spdk_divide_round_up(total_clusters, 8),
 				ctx->super->md_page_size);
