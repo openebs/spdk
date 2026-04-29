@@ -997,7 +997,7 @@ ut_lvol_pre_remove_hook(void)
 	CU_ASSERT(g_pre_remove_hook_ctx.call_count == 1);
 	CU_ASSERT(g_pre_remove_hook_ctx.pending_done_cb != NULL);
 	/* The lvs is still present in the bookkeeping list because the hook
-	 * has not signalled completion yet.
+	 * has not signaled completion yet.
 	 */
 	CU_ASSERT(!TAILQ_EMPTY(&g_spdk_lvol_pairs));
 
