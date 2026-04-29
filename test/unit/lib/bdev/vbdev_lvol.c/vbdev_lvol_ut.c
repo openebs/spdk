@@ -904,6 +904,112 @@ ut_lvol_hotremove(void)
 
 }
 
+struct ut_pre_remove_hook_ctx {
+	int				call_count;
+	struct spdk_lvol_store		*last_lvs;
+	bool				last_destroy;
+	bool				defer_done;
+	vbdev_lvs_pre_remove_done_fn	pending_done_cb;
+	void				*pending_done_cb_arg;
+};
+
+static struct ut_pre_remove_hook_ctx g_pre_remove_hook_ctx;
+
+static void
+ut_pre_remove_hook(struct spdk_lvol_store *lvs, bool destroy,
+		   vbdev_lvs_pre_remove_done_fn done_cb, void *done_cb_arg)
+{
+	g_pre_remove_hook_ctx.call_count++;
+	g_pre_remove_hook_ctx.last_lvs = lvs;
+	g_pre_remove_hook_ctx.last_destroy = destroy;
+
+	if (g_pre_remove_hook_ctx.defer_done) {
+		g_pre_remove_hook_ctx.pending_done_cb = done_cb;
+		g_pre_remove_hook_ctx.pending_done_cb_arg = done_cb_arg;
+		return;
+	}
+
+	done_cb(done_cb_arg);
+}
+
+static void
+ut_lvol_pre_remove_hook(void)
+{
+	int rc = 0;
+
+	memset(&g_pre_remove_hook_ctx, 0, sizeof(g_pre_remove_hook_ctx));
+	vbdev_lvs_register_pre_remove_hook(ut_pre_remove_hook);
+
+	lvol_store_initialize_fail = false;
+	lvol_store_initialize_cb_fail = false;
+	lvol_already_opened = false;
+
+	/* Create an lvol store */
+	rc = vbdev_lvs_create("bdev", "lvs", 0, LVS_CLEAR_WITH_UNMAP,
+			      lvol_store_op_with_handle_complete, NULL);
+	CU_ASSERT(rc == 0);
+	CU_ASSERT(g_lvserrno == 0);
+	SPDK_CU_ASSERT_FATAL(g_lvol_store != NULL);
+
+	/* Hot-removing the backing bdev triggers vbdev_lvs_unload(), which
+	 * must invoke the registered pre-remove hook with destroy == false
+	 * before the lvs is actually unloaded. The hook completes
+	 * synchronously here, so the lvs should be fully unloaded by the
+	 * time vbdev_lvs_hotremove_cb() returns.
+	 */
+	vbdev_lvs_hotremove_cb(&g_bdev);
+
+	CU_ASSERT(g_pre_remove_hook_ctx.call_count == 1);
+	CU_ASSERT(g_pre_remove_hook_ctx.last_destroy == false);
+	CU_ASSERT(g_lvol_store == NULL);
+	CU_ASSERT(TAILQ_EMPTY(&g_spdk_lvol_pairs));
+
+	/* Now exercise the destroy path: the hook must be invoked with
+	 * destroy == true.
+	 */
+	memset(&g_pre_remove_hook_ctx, 0, sizeof(g_pre_remove_hook_ctx));
+	rc = vbdev_lvs_create("bdev", "lvs", 0, LVS_CLEAR_WITH_UNMAP,
+			      lvol_store_op_with_handle_complete, NULL);
+	CU_ASSERT(rc == 0);
+	SPDK_CU_ASSERT_FATAL(g_lvol_store != NULL);
+
+	vbdev_lvs_destruct(g_lvol_store, lvol_store_op_complete, NULL);
+
+	CU_ASSERT(g_pre_remove_hook_ctx.call_count == 1);
+	CU_ASSERT(g_pre_remove_hook_ctx.last_destroy == true);
+	CU_ASSERT(g_lvserrno == 0);
+	CU_ASSERT(g_lvol_store == NULL);
+	CU_ASSERT(TAILQ_EMPTY(&g_spdk_lvol_pairs));
+
+	/* Verify the asynchronous case: the hook defers calling its done
+	 * callback. The lvs unload must not progress until the hook signals
+	 * completion.
+	 */
+	memset(&g_pre_remove_hook_ctx, 0, sizeof(g_pre_remove_hook_ctx));
+	g_pre_remove_hook_ctx.defer_done = true;
+	rc = vbdev_lvs_create("bdev", "lvs", 0, LVS_CLEAR_WITH_UNMAP,
+			      lvol_store_op_with_handle_complete, NULL);
+	CU_ASSERT(rc == 0);
+	SPDK_CU_ASSERT_FATAL(g_lvol_store != NULL);
+
+	vbdev_lvs_hotremove_cb(&g_bdev);
+
+	CU_ASSERT(g_pre_remove_hook_ctx.call_count == 1);
+	CU_ASSERT(g_pre_remove_hook_ctx.pending_done_cb != NULL);
+	/* The lvs is still present in the bookkeeping list because the hook
+	 * has not signalled completion yet.
+	 */
+	CU_ASSERT(!TAILQ_EMPTY(&g_spdk_lvol_pairs));
+
+	/* Signal completion: this must drive the unload to completion. */
+	g_pre_remove_hook_ctx.pending_done_cb(g_pre_remove_hook_ctx.pending_done_cb_arg);
+	CU_ASSERT(g_lvol_store == NULL);
+	CU_ASSERT(TAILQ_EMPTY(&g_spdk_lvol_pairs));
+
+	/* Clean up registered hook for the rest of the test suite. */
+	vbdev_lvs_register_pre_remove_hook(NULL);
+}
+
 static void
 ut_lvs_examine_check(bool success)
 {
@@ -1471,6 +1577,7 @@ int main(int argc, char **argv)
 	CU_ADD_TEST(suite, ut_lvol_resize);
 	CU_ADD_TEST(suite, ut_lvol_set_read_only);
 	CU_ADD_TEST(suite, ut_lvol_hotremove);
+	CU_ADD_TEST(suite, ut_lvol_pre_remove_hook);
 	CU_ADD_TEST(suite, ut_vbdev_lvol_get_io_channel);
 	CU_ADD_TEST(suite, ut_vbdev_lvol_io_type_supported);
 	CU_ADD_TEST(suite, ut_lvol_read_write);

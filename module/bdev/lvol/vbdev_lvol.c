@@ -43,6 +43,8 @@
 static TAILQ_HEAD(, lvol_store_bdev) g_spdk_lvol_pairs = TAILQ_HEAD_INITIALIZER(
 			g_spdk_lvol_pairs);
 
+static vbdev_lvs_pre_remove_hook_fn g_vbdev_lvs_pre_remove_hook;
+
 static int vbdev_lvs_init(void);
 static void vbdev_lvs_fini_start(void);
 static int vbdev_lvs_get_ctx_size(void);
@@ -411,13 +413,48 @@ _vbdev_lvs_remove_bdev_unregistered_cb(void *cb_arg, int bdeverrno)
 	}
 }
 
+struct vbdev_lvs_remove_ctx {
+	struct spdk_lvol_store	*lvs;
+	struct lvol_store_bdev	*lvs_bdev;
+	bool			destroy;
+};
+
+static void
+_vbdev_lvs_remove_after_hook(void *cb_arg)
+{
+	struct vbdev_lvs_remove_ctx *ctx = cb_arg;
+	struct spdk_lvol_store *lvs = ctx->lvs;
+	struct lvol_store_bdev *lvs_bdev = ctx->lvs_bdev;
+	bool destroy = ctx->destroy;
+	struct spdk_lvol *lvol, *tmp;
+
+	free(ctx);
+
+	if (_vbdev_lvs_are_lvols_closed(lvs)) {
+		if (destroy) {
+			spdk_lvs_destroy(lvs, _vbdev_lvs_remove_cb, lvs_bdev);
+		} else {
+			spdk_lvs_unload(lvs, _vbdev_lvs_remove_cb, lvs_bdev);
+		}
+	} else {
+		lvs->destruct = destroy;
+		if (destroy) {
+			_vbdev_lvs_remove_lvol_cb(lvs_bdev, 0);
+		} else {
+			TAILQ_FOREACH_SAFE(lvol, &lvs->lvols, link, tmp) {
+				spdk_bdev_unregister(lvol->bdev, _vbdev_lvs_remove_bdev_unregistered_cb, lvs_bdev);
+			}
+		}
+	}
+}
+
 static void
 _vbdev_lvs_remove(struct spdk_lvol_store *lvs, spdk_lvs_op_complete cb_fn, void *cb_arg,
 		  bool destroy)
 {
 	struct spdk_lvs_req *req;
 	struct lvol_store_bdev *lvs_bdev;
-	struct spdk_lvol *lvol, *tmp;
+	struct vbdev_lvs_remove_ctx *ctx;
 
 	lvs_bdev = vbdev_get_lvs_bdev_by_lvs(lvs);
 	if (!lvs_bdev) {
@@ -437,26 +474,50 @@ _vbdev_lvs_remove(struct spdk_lvol_store *lvs, spdk_lvs_op_complete cb_fn, void 
 		return;
 	}
 
+	ctx = calloc(1, sizeof(*ctx));
+	if (!ctx) {
+		SPDK_ERRLOG("Cannot alloc memory for vbdev lvol store remove context\n");
+		free(req);
+		if (cb_fn != NULL) {
+			cb_fn(cb_arg, -ENOMEM);
+		}
+		return;
+	}
+
 	req->cb_fn = cb_fn;
 	req->cb_arg = cb_arg;
 	lvs_bdev->req = req;
 
-	if (_vbdev_lvs_are_lvols_closed(lvs)) {
-		if (destroy) {
-			spdk_lvs_destroy(lvs, _vbdev_lvs_remove_cb, lvs_bdev);
-		} else {
-			spdk_lvs_unload(lvs, _vbdev_lvs_remove_cb, lvs_bdev);
-		}
-	} else {
-		lvs->destruct = destroy;
-		if (destroy) {
-			_vbdev_lvs_remove_lvol_cb(lvs_bdev, 0);
-		} else {
-			TAILQ_FOREACH_SAFE(lvol, &lvs->lvols, link, tmp) {
-				spdk_bdev_unregister(lvol->bdev, _vbdev_lvs_remove_bdev_unregistered_cb, lvs_bdev);
-			}
-		}
+	ctx->lvs = lvs;
+	ctx->lvs_bdev = lvs_bdev;
+	ctx->destroy = destroy;
+
+	/*
+	 * Give external consumers (e.g. an NVMe-oF target sharing one of the
+	 * lvols in this store) a chance to tear down the resources they have
+	 * tied to this lvs before we start unregistering the lvol bdevs. This
+	 * is essential when the lvs is being unloaded as a result of the
+	 * backing bdev being hot-removed: without this hook, an NVMe-oF
+	 * subsystem with a connected initiator would keep the lvol bdev
+	 * descriptor open and prevent the lvs from fully unloading, and the
+	 * subsystem itself would be left behind after the lvs is gone.
+	 *
+	 * The lvs is already marked as being removed (req != NULL on
+	 * lvs_bdev), so vbdev_get_lvs_bdev_by_lvs() will return NULL for it
+	 * during the hook, preventing reentry from concurrent RPCs.
+	 */
+	if (g_vbdev_lvs_pre_remove_hook != NULL) {
+		g_vbdev_lvs_pre_remove_hook(lvs, destroy, _vbdev_lvs_remove_after_hook, ctx);
+		return;
 	}
+
+	_vbdev_lvs_remove_after_hook(ctx);
+}
+
+void
+vbdev_lvs_register_pre_remove_hook(vbdev_lvs_pre_remove_hook_fn hook)
+{
+	g_vbdev_lvs_pre_remove_hook = hook;
 }
 
 void

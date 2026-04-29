@@ -58,6 +58,58 @@ int vbdev_lvs_create(const char *base_bdev_name, const char *name, uint32_t clus
 void vbdev_lvs_destruct(struct spdk_lvol_store *lvs, spdk_lvs_op_complete cb_fn, void *cb_arg);
 void vbdev_lvs_unload(struct spdk_lvol_store *lvs, spdk_lvs_op_complete cb_fn, void *cb_arg);
 
+/**
+ * \brief Completion callback type for the lvol store pre-remove hook.
+ *
+ * The hook implementation must invoke this callback once it has finished
+ * cleaning up any external resources tied to the lvol store. The lvs
+ * removal flow will only proceed after this callback is invoked.
+ *
+ * \param cb_arg The opaque pointer that was passed to the hook by vbdev_lvol.
+ */
+typedef void (*vbdev_lvs_pre_remove_done_fn)(void *cb_arg);
+
+/**
+ * \brief Hook function type invoked before an lvol store is unloaded or
+ *        destroyed.
+ *
+ * Callers register a single hook via \ref vbdev_lvs_register_pre_remove_hook
+ * to be notified when an lvol store is about to be removed. This is the place
+ * to tear down any external resources (for example NVMe-oF subsystems that
+ * are sharing one of the lvols in this store) so that, by the time the lvol
+ * bdevs are unregistered, no other module is still holding a descriptor open.
+ *
+ * The hook is asynchronous: the implementation must always invoke
+ * \b done_cb (with \b done_cb_arg) once it has finished, even if it has
+ * nothing to do, so that the lvs removal flow can continue.
+ *
+ * \param lvs        The lvol store that is about to be removed. Its lvols
+ *                   may be iterated to discover associated external resources.
+ * \param destroy    True when the lvs is being destroyed (and its on-disk
+ *                   metadata wiped); false when it is only being unloaded
+ *                   (for example because the backing bdev was hot-removed).
+ * \param done_cb    Continuation callback that the hook MUST invoke when it
+ *                   has finished its cleanup work.
+ * \param done_cb_arg Opaque argument to be passed back to \b done_cb.
+ */
+typedef void (*vbdev_lvs_pre_remove_hook_fn)(struct spdk_lvol_store *lvs,
+		bool destroy,
+		vbdev_lvs_pre_remove_done_fn done_cb,
+		void *done_cb_arg);
+
+/**
+ * \brief Register a hook that is invoked before an lvol store is removed.
+ *
+ * Only one hook may be registered at a time. Passing NULL clears any
+ * previously registered hook. The hook is invoked at the start of every
+ * lvs unload (including those triggered by a hot-remove of the backing
+ * bdev) and lvs destroy operation, before the lvol bdevs in the store
+ * are unregistered.
+ *
+ * \param hook The hook function, or NULL to unregister.
+ */
+void vbdev_lvs_register_pre_remove_hook(vbdev_lvs_pre_remove_hook_fn hook);
+
 int vbdev_lvol_create(struct spdk_lvol_store *lvs, const char *name, uint64_t sz,
 		      bool thin_provisioned, enum lvol_clear_method clear_method,
 		      spdk_lvol_op_with_handle_complete cb_fn,
