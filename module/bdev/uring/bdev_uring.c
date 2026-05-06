@@ -53,6 +53,8 @@ struct bdev_uring {
 	struct bdev_uring_zoned_dev	zd;
 	char			*filename;
 	int			fd;
+	struct bdev_uring_task  *reset_task;
+	struct spdk_poller      *reset_retry_timer;
 	TAILQ_ENTRY(bdev_uring)  link;
 };
 
@@ -63,6 +65,7 @@ static TAILQ_HEAD(, bdev_uring) g_uring_bdev_head = TAILQ_HEAD_INITIALIZER(g_uri
 
 #define SPDK_URING_QUEUE_DEPTH 512
 #define MAX_EVENTS_PER_POLL 32
+#define BDEV_URING_RESET_PENDING       (-1)
 
 static int
 bdev_uring_get_ctx_size(void)
@@ -587,15 +590,83 @@ bdev_uring_check_zoned_support(struct bdev_uring *uring, const char *name, const
 }
 #endif
 
+static int bdev_uring_reset_retry_timer(void *arg);
+
+static void
+_bdev_uring_get_io_pending(struct spdk_io_channel_iter *i)
+{
+        struct spdk_io_channel *ch = spdk_io_channel_iter_get_channel(i);
+        struct bdev_uring_io_channel *uring_ch = spdk_io_channel_get_ctx(ch);
+
+        if (uring_ch->group_ch->io_pending || uring_ch->group_ch->io_inflight) {
+                spdk_for_each_channel_continue(i, BDEV_URING_RESET_PENDING);
+                return;
+        }
+
+        spdk_for_each_channel_continue(i, 0);
+}
+
+static void
+_bdev_uring_get_io_pending_done(struct spdk_io_channel_iter *i, int status)
+{
+        struct bdev_uring *uring = spdk_io_channel_iter_get_ctx(i);
+
+        if (status == BDEV_URING_RESET_PENDING) {
+                uring->reset_retry_timer =
+                        SPDK_POLLER_REGISTER(bdev_uring_reset_retry_timer, uring, 500);
+                return;
+        }
+
+        spdk_bdev_io_complete(spdk_bdev_io_from_ctx(uring->reset_task),
+                              SPDK_BDEV_IO_STATUS_SUCCESS);
+        uring->reset_task = NULL;
+}
+
+static int
+bdev_uring_reset_retry_timer(void *arg)
+{
+        struct bdev_uring *uring = arg;
+
+        if (uring->reset_retry_timer) {
+                spdk_poller_unregister(&uring->reset_retry_timer);
+        }
+
+        spdk_for_each_channel(uring,
+                              _bdev_uring_get_io_pending,
+                              uring,
+                              _bdev_uring_get_io_pending_done);
+
+        return SPDK_POLLER_BUSY;
+}
+
+static void
+bdev_uring_reset(struct bdev_uring *uring, struct bdev_uring_task *uring_task)
+{
+        if (uring->reset_task != NULL) {
+                spdk_bdev_io_complete(spdk_bdev_io_from_ctx(uring_task),
+                                      SPDK_BDEV_IO_STATUS_NOMEM);
+                return;
+        }
+
+        uring->reset_task = uring_task;
+        bdev_uring_reset_retry_timer(uring);
+}
+
 static int
 _bdev_uring_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_io)
 {
+	struct bdev_uring *uring = (struct bdev_uring *)bdev_io->bdev->ctxt;
+	struct bdev_uring_task *uring_task =
+		(struct bdev_uring_task *)bdev_io->driver_ctx;
 
 	switch (bdev_io->type) {
 	case SPDK_BDEV_IO_TYPE_GET_ZONE_INFO:
 		return bdev_uring_zone_get_info(bdev_io);
 	case SPDK_BDEV_IO_TYPE_ZONE_MANAGEMENT:
 		return bdev_uring_zone_management_op(bdev_io);
+	case SPDK_BDEV_IO_TYPE_RESET:
+		bdev_uring_reset(uring, uring_task);
+		return 0;
 	/* Read and write operations must be performed on buffers aligned to
 	 * bdev->required_alignment. If user specified unaligned buffers,
 	 * get the aligned buffer from the pool by calling spdk_bdev_io_get_buf. */
@@ -627,6 +698,7 @@ bdev_uring_io_type_supported(void *ctx, enum spdk_bdev_io_type io_type)
 #endif
 	case SPDK_BDEV_IO_TYPE_READ:
 	case SPDK_BDEV_IO_TYPE_WRITE:
+	case SPDK_BDEV_IO_TYPE_RESET:
 		return true;
 	default:
 		return false;
@@ -705,6 +777,9 @@ uring_free_bdev(struct bdev_uring *uring)
 {
 	if (uring == NULL) {
 		return;
+	}
+	if (uring->reset_retry_timer) {
+		spdk_poller_unregister(&uring->reset_retry_timer);
 	}
 	free(uring->filename);
 	free(uring->bdev.name);
