@@ -4593,6 +4593,7 @@ nvmf_check_subsystem_active(struct spdk_nvmf_request *req)
 	struct spdk_nvmf_subsystem_poll_group *sgroup = NULL;
 	struct spdk_nvmf_subsystem_pg_ns_info *ns_info;
 	uint32_t nsid;
+	struct spdk_nvmf_subsystem *subsystem = NULL;
 
 	if (spdk_likely(qpair->ctrlr)) {
 		sgroup = &qpair->group->sgroups[qpair->ctrlr->subsys->id];
@@ -4606,7 +4607,7 @@ nvmf_check_subsystem_active(struct spdk_nvmf_request *req)
 		if (spdk_unlikely(req->cmd->nvmf_cmd.opcode == SPDK_NVME_OPC_FABRIC ||
 				  nvmf_qpair_is_admin_queue(qpair))) {
 			if (sgroup->state != SPDK_NVMF_SUBSYSTEM_ACTIVE) {
-				struct spdk_nvmf_subsystem *subsystem = qpair->ctrlr->subsys;
+				subsystem = qpair->ctrlr->subsys;
 				if (req->cmd->nvmf_cmd.opcode != SPDK_NVME_OPC_FABRIC &&
 					(subsystem->pause_flags & SPDK_NVMF_SUBSYSTEM_PAUSE_KEEP_ADMINQ)) {
 					/*
