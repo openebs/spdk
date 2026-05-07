@@ -554,6 +554,12 @@ int spdk_nvmf_subsystem_pause_ext(struct spdk_nvmf_subsystem *subsystem,
 			      uint32_t flags,
 			      spdk_nvmf_subsystem_state_change_done cb_fn,
 			      void *cb_arg);
+
+int spdk_nvmf_subsystem_set_pause_timeout(struct spdk_nvmf_subsystem *subsystem,
+					  uint32_t timeout_sec);
+
+uint32_t spdk_nvmf_subsystem_get_pause_timeout(struct spdk_nvmf_subsystem *subsystem);
+
 /**
  * Transition an NVMe-oF subsystem from Paused to Active state.
  *

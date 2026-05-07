@@ -24,6 +24,7 @@
 /* The spec reserves cntlid values in the range FFF0h to FFFFh. */
 #define NVMF_MIN_CNTLID 1
 #define NVMF_MAX_CNTLID 0xFFEF
+#define SPDK_NVMF_DEFAULT_PAUSE_TIMEOUT_SEC 120
 
 enum spdk_nvmf_tgt_state {
 	NVMF_TGT_IDLE = 0,
@@ -323,6 +324,7 @@ struct spdk_nvmf_subsystem {
 	/* Vendor specific flags for maintainance work */
 	uint32_t                                        pause_flags;
 	struct spdk_poller				*pause_timer;
+	uint32_t					pause_timeout_sec;
 };
 
 static int

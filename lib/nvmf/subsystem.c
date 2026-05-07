@@ -262,6 +262,9 @@ spdk_nvmf_subsystem_create(struct spdk_nvmf_tgt *tgt,
 	subsystem->next_cntlid = 0;
 	subsystem->min_cntlid = NVMF_MIN_CNTLID;
 	subsystem->max_cntlid = NVMF_MAX_CNTLID;
+	subsystem->pause_timeout_sec = SPDK_NVMF_DEFAULT_PAUSE_TIMEOUT_SEC;
+	subsystem->pause_flags = 0;
+	subsystem->pause_timer = NULL;
 	snprintf(subsystem->subnqn, sizeof(subsystem->subnqn), "%s", nqn);
 	pthread_mutex_init(&subsystem->mutex, NULL);
 	TAILQ_INIT(&subsystem->listeners);
@@ -787,10 +790,24 @@ spdk_nvmf_subsystem_pause_ext(struct spdk_nvmf_subsystem *subsystem,
 		subsystem->pause_timer = spdk_poller_register(
 				nvmf_subsys_pause_timer_cb,
 				subsystem,
-				120ULL * 1000000ULL
+				subsystem->pause_timeout_sec * 1000000ULL
 			);
 	}
 	return spdk_nvmf_subsystem_pause(subsystem, nsid, cb_fn, cb_arg);
+}
+
+int
+spdk_nvmf_subsystem_set_pause_timeout(struct spdk_nvmf_subsystem *subsystem,
+				      uint32_t timeout_sec)
+{
+	subsystem->pause_timeout_sec = timeout_sec;
+	return 0;
+}
+
+uint32_t
+spdk_nvmf_subsystem_get_pause_timeout(struct spdk_nvmf_subsystem *subsystem)
+{
+	return subsystem->pause_timeout_sec;
 }
 
 int
