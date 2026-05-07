@@ -320,6 +320,9 @@ struct spdk_nvmf_subsystem {
 	/* Subsystem event callback and its argument. */
 	spdk_nvmf_subsystem_event_cb			event_cb_fn;
 	void						*event_cb_arg;
+	/* Vendor specific flags for maintainance work */
+	uint32_t                                        pause_flags;
+	struct spdk_poller				*pause_timer;
 };
 
 static int

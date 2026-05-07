@@ -4606,6 +4606,16 @@ nvmf_check_subsystem_active(struct spdk_nvmf_request *req)
 		if (spdk_unlikely(req->cmd->nvmf_cmd.opcode == SPDK_NVME_OPC_FABRIC ||
 				  nvmf_qpair_is_admin_queue(qpair))) {
 			if (sgroup->state != SPDK_NVMF_SUBSYSTEM_ACTIVE) {
+				struct spdk_nvmf_subsystem *subsystem = qpair->ctrlr->subsys;
+				if (req->cmd->nvmf_cmd.opcode != SPDK_NVME_OPC_FABRIC &&
+					(subsystem->pause_flags & SPDK_NVMF_SUBSYSTEM_PAUSE_KEEP_ADMINQ)) {
+					/*
+					 * Vendor maintenance pause
+					 * allow normal admin queue commands while data IO is paused
+					 */
+					sgroup->mgmt_io_outstanding++;
+					return true;
+				}
 				/* The subsystem is not currently active. Queue this request. */
 				TAILQ_INSERT_TAIL(&sgroup->queued, req, link);
 				return false;

@@ -27,6 +27,8 @@ extern "C" {
 
 #define SPDK_TLS_PSK_MAX_LEN		200
 
+#define SPDK_NVMF_SUBSYSTEM_PAUSE_KEEP_ADMINQ 0x1
+
 struct spdk_nvmf_tgt;
 struct spdk_nvmf_subsystem;
 struct spdk_nvmf_ctrlr;
@@ -544,6 +546,15 @@ int spdk_nvmf_subsystem_pause(struct spdk_nvmf_subsystem *subsystem,
 			      void *cb_arg);
 
 /**
+ * Vendor specific wrapper of subsystem pause
+ * we need to keep allow some admin commands during subsystem pause
+ */
+int spdk_nvmf_subsystem_pause_ext(struct spdk_nvmf_subsystem *subsystem,
+			      uint32_t nsid,
+			      uint32_t flags,
+			      spdk_nvmf_subsystem_state_change_done cb_fn,
+			      void *cb_arg);
+/**
  * Transition an NVMe-oF subsystem from Paused to Active state.
  *
  * This resumes the entire subsystem, including any paused namespaces.
@@ -559,6 +570,13 @@ int spdk_nvmf_subsystem_resume(struct spdk_nvmf_subsystem *subsystem,
 			       spdk_nvmf_subsystem_state_change_done cb_fn,
 			       void *cb_arg);
 
+/**
+ * Vendor specific wrapper of subsystem resume
+ * We need to clear vendor specific flags during resume
+ */
+int spdk_nvmf_subsystem_resume_ext(struct spdk_nvmf_subsystem *subsystem,
+			       spdk_nvmf_subsystem_state_change_done cb_fn,
+			       void *cb_arg);
 /**
  * Search the target for a subsystem with the given NQN.
  *

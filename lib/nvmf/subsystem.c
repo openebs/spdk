@@ -382,6 +382,11 @@ _nvmf_subsystem_destroy(struct spdk_nvmf_subsystem *subsystem)
 		return -EINPROGRESS;
 	}
 
+	if (subsystem->pause_timer) {
+		spdk_poller_unregister(&subsystem->pause_timer);
+		subsystem->pause_timer = NULL;
+	}
+
 	ns = spdk_nvmf_subsystem_get_first_ns(subsystem);
 	while (ns != NULL) {
 		struct spdk_nvmf_ns *next_ns = spdk_nvmf_subsystem_get_next_ns(subsystem, ns);
@@ -758,6 +763,36 @@ spdk_nvmf_subsystem_stop(struct spdk_nvmf_subsystem *subsystem,
 	return nvmf_subsystem_state_change(subsystem, 0, SPDK_NVMF_SUBSYSTEM_INACTIVE, cb_fn, cb_arg);
 }
 
+static
+int nvmf_subsys_pause_timer_cb(void *arg)
+{
+	struct spdk_nvmf_subsystem *subsystem = arg;
+	subsystem->pause_flags = 0;
+	if (subsystem->pause_timer) {
+		spdk_poller_unregister(&subsystem->pause_timer);
+		subsystem->pause_timer = NULL;
+	}
+	return SPDK_POLLER_BUSY;
+}
+
+int
+spdk_nvmf_subsystem_pause_ext(struct spdk_nvmf_subsystem *subsystem,
+                              uint32_t nsid,
+                              uint32_t flags,
+                              spdk_nvmf_subsystem_state_change_done cb_fn,
+                              void *cb_arg)
+{
+	subsystem->pause_flags = flags;
+	if (subsystem->pause_timer == NULL) {
+		subsystem->pause_timer = spdk_poller_register(
+				nvmf_subsys_pause_timer_cb,
+				subsystem,
+				120ULL * 1000000ULL
+			);
+	}
+	return spdk_nvmf_subsystem_pause(subsystem, nsid, cb_fn, cb_arg);
+}
+
 int
 spdk_nvmf_subsystem_pause(struct spdk_nvmf_subsystem *subsystem,
 			  uint32_t nsid,
@@ -765,6 +800,19 @@ spdk_nvmf_subsystem_pause(struct spdk_nvmf_subsystem *subsystem,
 			  void *cb_arg)
 {
 	return nvmf_subsystem_state_change(subsystem, nsid, SPDK_NVMF_SUBSYSTEM_PAUSED, cb_fn, cb_arg);
+}
+
+int
+spdk_nvmf_subsystem_resume_ext(struct spdk_nvmf_subsystem *subsystem,
+			   spdk_nvmf_subsystem_state_change_done cb_fn,
+			   void *cb_arg)
+{
+	subsystem->pause_flags = 0;
+	if (subsystem->pause_timer) {
+		spdk_poller_unregister(&subsystem->pause_timer);
+		subsystem->pause_timer = NULL;
+	}
+	return spdk_nvmf_subsystem_resume(subsystem, cb_fn, cb_arg);
 }
 
 int
