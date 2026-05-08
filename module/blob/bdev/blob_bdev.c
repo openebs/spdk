@@ -601,8 +601,14 @@ spdk_bs_bdev_reset(struct spdk_bs_dev *bs_dev, spdk_bdev_io_completion_cb cb_fn,
 {
 	struct blob_bdev *blob_bdev = (struct blob_bdev *)bs_dev;
 	struct spdk_io_channel  *ch;
-	struct bs_bdev_reset_ctx *ctx = calloc(1, sizeof(*ctx));
+	struct bs_bdev_reset_ctx *ctx;
 
+	if (!spdk_bdev_io_type_supported(spdk_bdev_desc_get_bdev(blob_bdev->desc),
+					 SPDK_BDEV_IO_TYPE_RESET)) {
+		return -ENOTSUP;
+	}
+
+	ctx = calloc(1, sizeof(*ctx));
 	if (!ctx) {
 		return -ENOMEM;
 	}
