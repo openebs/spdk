@@ -265,6 +265,9 @@ spdk_nvmf_subsystem_create(struct spdk_nvmf_tgt *tgt,
 	subsystem->next_cntlid = 1;
 	subsystem->min_cntlid = NVMF_MIN_CNTLID;
 	subsystem->max_cntlid = NVMF_MAX_CNTLID;
+	subsystem->pause_timeout_sec = SPDK_NVMF_DEFAULT_PAUSE_TIMEOUT_SEC;
+	subsystem->pause_flags = 0;
+	subsystem->pause_timer = NULL;
 	snprintf(subsystem->subnqn, sizeof(subsystem->subnqn), "%s", nqn);
 	pthread_mutex_init(&subsystem->mutex, NULL);
 	TAILQ_INIT(&subsystem->listeners);
@@ -398,6 +401,11 @@ _nvmf_subsystem_destroy(struct spdk_nvmf_subsystem *subsystem)
 			return rc;
 		}
 		return -EINPROGRESS;
+	}
+
+	if (subsystem->pause_timer) {
+		spdk_poller_unregister(&subsystem->pause_timer);
+		subsystem->pause_timer = NULL;
 	}
 
 	ns = spdk_nvmf_subsystem_get_first_ns(subsystem);
@@ -813,6 +821,50 @@ spdk_nvmf_subsystem_stop(struct spdk_nvmf_subsystem *subsystem,
 	return nvmf_subsystem_state_change(subsystem, 0, SPDK_NVMF_SUBSYSTEM_INACTIVE, cb_fn, cb_arg);
 }
 
+static
+int nvmf_subsys_pause_timer_cb(void *arg)
+{
+	struct spdk_nvmf_subsystem *subsystem = arg;
+	subsystem->pause_flags = 0;
+	if (subsystem->pause_timer) {
+		spdk_poller_unregister(&subsystem->pause_timer);
+		subsystem->pause_timer = NULL;
+	}
+	return SPDK_POLLER_BUSY;
+}
+
+int
+spdk_nvmf_subsystem_pause_ext(struct spdk_nvmf_subsystem *subsystem,
+                              uint32_t nsid,
+                              uint32_t flags,
+                              spdk_nvmf_subsystem_state_change_done cb_fn,
+                              void *cb_arg)
+{
+	subsystem->pause_flags = flags;
+	if (subsystem->pause_timer == NULL) {
+		subsystem->pause_timer = spdk_poller_register(
+				nvmf_subsys_pause_timer_cb,
+				subsystem,
+				subsystem->pause_timeout_sec * 1000000ULL
+			);
+	}
+	return spdk_nvmf_subsystem_pause(subsystem, nsid, cb_fn, cb_arg);
+}
+
+int
+spdk_nvmf_subsystem_set_pause_timeout(struct spdk_nvmf_subsystem *subsystem,
+				      uint32_t timeout_sec)
+{
+	subsystem->pause_timeout_sec = timeout_sec;
+	return 0;
+}
+
+uint32_t
+spdk_nvmf_subsystem_get_pause_timeout(struct spdk_nvmf_subsystem *subsystem)
+{
+	return subsystem->pause_timeout_sec;
+}
+
 int
 spdk_nvmf_subsystem_pause(struct spdk_nvmf_subsystem *subsystem,
 			  uint32_t nsid,
@@ -820,6 +872,19 @@ spdk_nvmf_subsystem_pause(struct spdk_nvmf_subsystem *subsystem,
 			  void *cb_arg)
 {
 	return nvmf_subsystem_state_change(subsystem, nsid, SPDK_NVMF_SUBSYSTEM_PAUSED, cb_fn, cb_arg);
+}
+
+int
+spdk_nvmf_subsystem_resume_ext(struct spdk_nvmf_subsystem *subsystem,
+			   spdk_nvmf_subsystem_state_change_done cb_fn,
+			   void *cb_arg)
+{
+	subsystem->pause_flags = 0;
+	if (subsystem->pause_timer) {
+		spdk_poller_unregister(&subsystem->pause_timer);
+		subsystem->pause_timer = NULL;
+	}
+	return spdk_nvmf_subsystem_resume(subsystem, cb_fn, cb_arg);
 }
 
 int

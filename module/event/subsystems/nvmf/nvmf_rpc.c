@@ -14,6 +14,56 @@ static const struct spdk_json_object_decoder nvmf_rpc_subsystem_tgt_opts_decoder
 	{"max_subsystems", 0, spdk_json_decode_uint32, true}
 };
 
+struct rpc_nvmf_subsystem_set_pause_timeout {
+	char *nqn;
+	uint32_t pause_timeout_sec;
+};
+
+static const struct spdk_json_object_decoder rpc_nvmf_subsystem_set_pause_timeout_decoders[] = {
+	{"nqn", offsetof(struct rpc_nvmf_subsystem_set_pause_timeout, nqn), spdk_json_decode_string},
+	{"pause_timeout_sec", offsetof(struct rpc_nvmf_subsystem_set_pause_timeout, pause_timeout_sec), spdk_json_decode_uint32}
+};
+
+static void
+rpc_nvmf_subsystem_set_pause_timeout(struct spdk_jsonrpc_request *request,
+				     const struct spdk_json_val *params)
+{
+	struct rpc_nvmf_subsystem_set_pause_timeout req = {};
+	struct spdk_nvmf_subsystem *subsystem;
+	int rc;
+
+	if (spdk_json_decode_object(params,
+				    rpc_nvmf_subsystem_set_pause_timeout_decoders,
+				    SPDK_COUNTOF(rpc_nvmf_subsystem_set_pause_timeout_decoders),
+				    &req)) {
+		spdk_jsonrpc_send_error_response(request, SPDK_JSONRPC_ERROR_INVALID_PARAMS,
+						 "Invalid parameters");
+		goto cleanup;
+	}
+
+	subsystem = spdk_nvmf_tgt_find_subsystem(g_spdk_nvmf_tgt, req.nqn);
+	if (subsystem == NULL) {
+		spdk_jsonrpc_send_error_response(request, SPDK_JSONRPC_ERROR_INTERNAL_ERROR, "Invalid nqn");
+		goto cleanup;
+	}
+
+	rc = spdk_nvmf_subsystem_set_pause_timeout(subsystem, req.pause_timeout_sec);
+	if (rc != 0) {
+		spdk_jsonrpc_send_error_response(request, SPDK_JSONRPC_ERROR_INTERNAL_ERROR,
+				"Failed to set timeout");
+		goto cleanup;
+	}
+
+	spdk_jsonrpc_send_bool_response(request, true);
+
+cleanup:
+	free(req.nqn);
+}
+
+SPDK_RPC_REGISTER("nvmf_subsystem_set_pause_timeout",
+		  rpc_nvmf_subsystem_set_pause_timeout,
+		  SPDK_RPC_RUNTIME)
+
 static void
 rpc_nvmf_set_max_subsystems(struct spdk_jsonrpc_request *request,
 			    const struct spdk_json_val *params)
