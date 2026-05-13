@@ -879,11 +879,6 @@ spdk_nvmf_subsystem_resume_ext(struct spdk_nvmf_subsystem *subsystem,
 			   spdk_nvmf_subsystem_state_change_done cb_fn,
 			   void *cb_arg)
 {
-	subsystem->pause_flags = 0;
-	if (subsystem->pause_timer) {
-		spdk_poller_unregister(&subsystem->pause_timer);
-		subsystem->pause_timer = NULL;
-	}
 	return spdk_nvmf_subsystem_resume(subsystem, cb_fn, cb_arg);
 }
 
@@ -892,6 +887,11 @@ spdk_nvmf_subsystem_resume(struct spdk_nvmf_subsystem *subsystem,
 			   spdk_nvmf_subsystem_state_change_done cb_fn,
 			   void *cb_arg)
 {
+	subsystem->pause_flags = 0;
+	if (subsystem->pause_timer) {
+		spdk_poller_unregister(&subsystem->pause_timer);
+		subsystem->pause_timer = NULL;
+	}
 	return nvmf_subsystem_state_change(subsystem, 0, SPDK_NVMF_SUBSYSTEM_ACTIVE, cb_fn, cb_arg);
 }
 
