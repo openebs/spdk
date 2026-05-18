@@ -20,6 +20,17 @@ def nvmf_set_max_subsystems(client,
     params['max_subsystems'] = max_subsystems
     return client.call('nvmf_set_max_subsystems', params)
 
+def nvmf_subsystem_set_pause_timeout(client, nqn, pause_timeout_sec, tgt_name=None):
+    """Set NVMf subsystem pause timeout."""
+    params = {
+        'nqn': nqn,
+        'pause_timeout_sec': pause_timeout_sec,
+    }
+
+    if tgt_name:
+        params['tgt_name'] = tgt_name
+
+    return client.call('nvmf_subsystem_set_pause_timeout', params)
 
 def nvmf_set_config(client,
                     passthru_identify_ctrlr=None,
