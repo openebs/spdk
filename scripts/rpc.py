@@ -2578,9 +2578,8 @@ Format: 'user:u1 secret:s1 muser:mu1 msecret:ms1,user:u2 secret:s2 muser:mu2 mse
             nqn=args.nqn,
             pause_timeout_sec=args.pause_timeout_sec))
 
-
     p = subparsers.add_parser('nvmf_subsystem_set_pause_timeout',
-                          help='Set NVMf subsystem pause timeout')
+                              help='Set NVMf subsystem pause timeout')
     p.add_argument('nqn', help='Subsystem NQN')
     p.add_argument('pause_timeout_sec', help='Pause timeout in seconds', type=int)
     p.set_defaults(func=nvmf_subsystem_set_pause_timeout)

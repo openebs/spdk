@@ -50,7 +50,7 @@ rpc_nvmf_subsystem_set_pause_timeout(struct spdk_jsonrpc_request *request,
 	rc = spdk_nvmf_subsystem_set_pause_timeout(subsystem, req.pause_timeout_sec);
 	if (rc != 0) {
 		spdk_jsonrpc_send_error_response(request, SPDK_JSONRPC_ERROR_INTERNAL_ERROR,
-				"Failed to set timeout");
+						 "Failed to set timeout");
 		goto cleanup;
 	}
 

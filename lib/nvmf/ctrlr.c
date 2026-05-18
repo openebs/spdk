@@ -4878,7 +4878,7 @@ nvmf_check_subsystem_active(struct spdk_nvmf_request *req)
 		if (sgroup->state != SPDK_NVMF_SUBSYSTEM_ACTIVE) {
 			subsystem = qpair->ctrlr->subsys;
 			if (req->cmd->nvmf_cmd.opcode != SPDK_NVME_OPC_FABRIC &&
-				(subsystem->pause_flags & SPDK_NVMF_SUBSYSTEM_PAUSE_KEEP_ADMINQ)) {
+			    (subsystem->pause_flags & SPDK_NVMF_SUBSYSTEM_PAUSE_KEEP_ADMINQ)) {
 				/*
 				 * Vendor maintenance pause
 				 * allow normal admin queue commands while data IO is paused

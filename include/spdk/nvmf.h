@@ -573,13 +573,13 @@ int spdk_nvmf_subsystem_pause(struct spdk_nvmf_subsystem *subsystem,
  * we need to keep allow some admin commands during subsystem pause
  */
 int spdk_nvmf_subsystem_pause_ext(struct spdk_nvmf_subsystem *subsystem,
-			      uint32_t nsid,
-			      uint32_t flags,
-			      spdk_nvmf_subsystem_state_change_done cb_fn,
-			      void *cb_arg);
+				  uint32_t nsid,
+				  uint32_t flags,
+				  spdk_nvmf_subsystem_state_change_done cb_fn,
+				  void *cb_arg);
 
 int spdk_nvmf_subsystem_set_pause_timeout(struct spdk_nvmf_subsystem *subsystem,
-					  uint32_t timeout_sec);
+		uint32_t timeout_sec);
 
 uint32_t spdk_nvmf_subsystem_get_pause_timeout(struct spdk_nvmf_subsystem *subsystem);
 
@@ -604,8 +604,8 @@ int spdk_nvmf_subsystem_resume(struct spdk_nvmf_subsystem *subsystem,
  * We need to clear vendor specific flags during resume
  */
 int spdk_nvmf_subsystem_resume_ext(struct spdk_nvmf_subsystem *subsystem,
-			       spdk_nvmf_subsystem_state_change_done cb_fn,
-			       void *cb_arg);
+				   spdk_nvmf_subsystem_state_change_done cb_fn,
+				   void *cb_arg);
 /**
  * Search the target for a subsystem with the given NQN.
  *
