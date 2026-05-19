@@ -32,6 +32,29 @@ def nvmf_subsystem_set_pause_timeout(client, nqn, pause_timeout_sec, tgt_name=No
 
     return client.call('nvmf_subsystem_set_pause_timeout', params)
 
+def nvmf_subsystem_pause_ext(client, nqn, nsid=0, flags=0, tgt_name=None):
+    params = {
+        'nqn': nqn,
+        'nsid': nsid,
+        'flags': flags,
+    }
+
+    if tgt_name:
+        params['tgt_name'] = tgt_name
+
+    return client.call('nvmf_subsystem_pause_ext', params)
+
+
+def nvmf_subsystem_resume_ext(client, nqn, tgt_name=None):
+    params = {
+        'nqn': nqn,
+    }
+
+    if tgt_name:
+        params['tgt_name'] = tgt_name
+
+    return client.call('nvmf_subsystem_resume_ext', params)
+
 def nvmf_set_config(client,
                     passthru_identify_ctrlr=None,
                     poll_groups_mask=None,

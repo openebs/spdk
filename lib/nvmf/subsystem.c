@@ -29,6 +29,11 @@
 #define MODEL_NUMBER_DEFAULT "SPDK bdev Controller"
 #define NVMF_SUBSYSTEM_DEFAULT_NAMESPACES 32
 
+struct spdk_nvmf_resume_ext_ctx {
+	spdk_nvmf_subsystem_state_change_done cb_fn;
+	void *cb_arg;
+};
+
 /*
  * States for parsing valid domains in NQNs according to RFC 1034
  */
@@ -875,12 +880,42 @@ spdk_nvmf_subsystem_pause(struct spdk_nvmf_subsystem *subsystem,
 	return nvmf_subsystem_state_change(subsystem, nsid, SPDK_NVMF_SUBSYSTEM_PAUSED, cb_fn, cb_arg);
 }
 
+static void
+nvmf_subsystem_resume_ext_done(struct spdk_nvmf_subsystem *subsystem,
+			       void *cb_arg, int status)
+{
+	struct spdk_nvmf_resume_ext_ctx *ctx = cb_arg;
+
+	if (status == 0) {
+		subsystem->pause_flags = 0;
+
+		if (subsystem->pause_timer != NULL) {
+			spdk_poller_unregister(&subsystem->pause_timer);
+		}
+	}
+
+	ctx->cb_fn(subsystem, ctx->cb_arg, status);
+	free(ctx);
+}
+
 int
 spdk_nvmf_subsystem_resume_ext(struct spdk_nvmf_subsystem *subsystem,
 			       spdk_nvmf_subsystem_state_change_done cb_fn,
 			       void *cb_arg)
 {
-	return spdk_nvmf_subsystem_resume(subsystem, cb_fn, cb_arg);
+	struct spdk_nvmf_resume_ext_ctx *ctx;
+
+	ctx = calloc(1, sizeof(*ctx));
+	if (ctx == NULL) {
+		return -ENOMEM;
+	}
+
+	ctx->cb_fn = cb_fn;
+	ctx->cb_arg = cb_arg;
+
+	return spdk_nvmf_subsystem_resume(subsystem,
+					  nvmf_subsystem_resume_ext_done,
+					  ctx);
 }
 
 int
