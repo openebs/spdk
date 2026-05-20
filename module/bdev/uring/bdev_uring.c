@@ -236,6 +236,35 @@ bdev_uring_close(struct bdev_uring *uring)
 }
 
 static int64_t
+bdev_uring_unmap(struct bdev_uring *uring, struct spdk_io_channel *ch,
+		 struct bdev_uring_task *uring_task,
+		 uint64_t nbytes, uint64_t offset)
+{
+	struct bdev_uring_io_channel *uring_ch = spdk_io_channel_get_ctx(ch);
+	struct bdev_uring_group_channel *group_ch = uring_ch->group_ch;
+	struct io_uring_sqe *sqe;
+
+	sqe = io_uring_get_sqe(&group_ch->uring);
+	if (!sqe) {
+		URING_DEBUGLOG(uring, "get sqe failed as out of resource\n");
+		return -ENOMEM;
+	}
+
+	io_uring_prep_fallocate(sqe, uring->fd,
+				FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
+				offset, nbytes);
+
+	io_uring_sqe_set_data(sqe, uring_task);
+	uring_task->len = nbytes;
+	uring_task->ch = uring_ch;
+
+	URING_DEBUGLOG(uring, "unmap size %lu at off: %#lx\n", nbytes, offset);
+
+	group_ch->io_pending++;
+	return nbytes;
+}
+
+static int64_t
 bdev_uring_readv(struct bdev_uring *uring, struct spdk_io_channel *ch,
 		 struct bdev_uring_task *uring_task,
 		 struct iovec *iov, int iovcnt, uint64_t nbytes, uint64_t offset)
@@ -324,7 +353,9 @@ bdev_uring_reap(struct bdev_uring_group_channel *group_ch, int max)
 		uring_task = (struct bdev_uring_task *)cqe->user_data;
 		bdev_io = spdk_bdev_io_from_ctx(uring_task);
 		rc = cqe->res;
-		if (spdk_unlikely(rc != (signed)uring_task->len)) {
+		if (spdk_unlikely((bdev_io->type == SPDK_BDEV_IO_TYPE_UNMAP && rc < 0) ||
+				  (bdev_io->type != SPDK_BDEV_IO_TYPE_UNMAP &&
+				   rc != (signed)uring_task->len))) {
 			uring = uring_from_bdev(bdev_io->bdev);
 
 			/* Since spdk_fd_get_size is not cost-free, we prioritize the check for -EAGAIN/-EWOULDBLOCK
@@ -716,6 +747,12 @@ _bdev_uring_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev
 		spdk_bdev_io_get_buf(bdev_io, bdev_uring_get_buf_cb,
 				     bdev_io->u.bdev.num_blocks * bdev_io->bdev->blocklen);
 		return 0;
+	case SPDK_BDEV_IO_TYPE_UNMAP:
+		return bdev_uring_unmap(uring_from_bdev(bdev_io->bdev),
+					ch,
+					(struct bdev_uring_task *)bdev_io->driver_ctx,
+					bdev_io->u.bdev.num_blocks * bdev_io->bdev->blocklen,
+					bdev_io->u.bdev.offset_blocks * bdev_io->bdev->blocklen);
 	default:
 		return -1;
 	}
@@ -739,6 +776,7 @@ bdev_uring_io_type_supported(void *ctx, enum spdk_bdev_io_type io_type)
 #endif
 	case SPDK_BDEV_IO_TYPE_READ:
 	case SPDK_BDEV_IO_TYPE_WRITE:
+	case SPDK_BDEV_IO_TYPE_UNMAP:
 		return true;
 	default:
 		return false;
