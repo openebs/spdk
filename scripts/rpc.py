@@ -2573,6 +2573,48 @@ Format: 'user:u1 secret:s1 muser:mu1 msecret:ms1,user:u2 secret:s2 muser:mu2 mse
     p.add_argument('-x', '--max-subsystems', help='Max number of NVMf subsystems', type=int, required=True)
     p.set_defaults(func=nvmf_set_max_subsystems)
 
+    def nvmf_subsystem_pause_ext(args):
+        rpc.nvmf.nvmf_subsystem_pause_ext(
+            args.client,
+            nqn=args.nqn,
+            nsid=args.nsid,
+            flags=args.flags)
+
+    def nvmf_subsystem_resume_ext(args):
+        rpc.nvmf.nvmf_subsystem_resume_ext(
+            args.client,
+            nqn=args.nqn)
+
+    p = subparsers.add_parser(
+        'nvmf_subsystem_pause_ext',
+        help='Pause NVMf subsystem with vendor flags')
+
+    p.add_argument('nqn', help='Subsystem NQN')
+    p.add_argument('nsid', type=int, help='Namespace ID')
+    p.add_argument('flags', type=int, help='Pause flags')
+    p.set_defaults(func=nvmf_subsystem_pause_ext)
+
+    p = subparsers.add_parser(
+        'nvmf_subsystem_resume_ext',
+        help='Resume NVMf subsystem')
+
+    p.add_argument('nqn', help='Subsystem NQN')
+    p.set_defaults(func=nvmf_subsystem_resume_ext)
+
+    def nvmf_subsystem_set_pause_timeout(args):
+        rpc.nvmf.nvmf_subsystem_set_pause_timeout(
+            args.client,
+            nqn=args.nqn,
+            pause_timeout_sec=args.pause_timeout_sec,
+            tgt_name=args.tgt_name)
+
+    p = subparsers.add_parser('nvmf_subsystem_set_pause_timeout',
+                              help='Set NVMf subsystem pause timeout')
+    p.add_argument('nqn', help='Subsystem NQN')
+    p.add_argument('pause_timeout_sec', help='Pause timeout in seconds', type=int)
+    p.add_argument('-t', '--tgt-name', help='Parent NVMe-oF target name')
+    p.set_defaults(func=nvmf_subsystem_set_pause_timeout)
+
     def nvmf_set_config(args):
         rpc.nvmf.nvmf_set_config(args.client,
                                  passthru_identify_ctrlr=args.passthru_identify_ctrlr,

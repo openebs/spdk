@@ -26,7 +26,7 @@
 /* The spec reserves cntlid values in the range FFF0h to FFFFh. */
 #define NVMF_MIN_CNTLID 1
 #define NVMF_MAX_CNTLID 0xFFEF
-
+#define SPDK_NVMF_DEFAULT_PAUSE_TIMEOUT_SEC 120
 #define NVMF_DISC_KATO_IN_MS 120000
 #define NVMF_KAS_TIME_UNIT_IN_MS 100
 #define NVMF_DEFAULT_KAS 100
@@ -365,6 +365,10 @@ struct spdk_nvmf_subsystem {
 	/* Subsystem event callback and its argument. */
 	spdk_nvmf_subsystem_event_cb			event_cb_fn;
 	void						*event_cb_arg;
+	/* Vendor specific flags for maintainance work */
+	uint32_t                                        pause_flags;
+	struct spdk_poller				*pause_timer;
+	uint32_t					pause_timeout_sec;
 };
 
 static int

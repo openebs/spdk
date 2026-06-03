@@ -46,7 +46,9 @@ func spdk_gorpc_call(jsonPtr *C.char, location *C.char) (*C.char, C.int) {
 		log.Printf("error on client creation, err: %s", err.Error())
 		return nil, ConnectionError
 	}
-	defer rpcClient.Close()
+	defer func() {
+		_ = rpcClient.Close()
+	}()
 
 	method := jsonMap["method"].(string)
 	params := jsonMap["params"].(map[string]any)
