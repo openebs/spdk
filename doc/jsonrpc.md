@@ -8830,6 +8830,82 @@ Example response:
 }
 ~~
 
+### nvmf_subsystem_pause_ext method {#rpc_nvmf_subsystem_pause_ext}
+
+Pause an NVMe-oF subsystem with the specified pause flags.
+
+#### Parameters
+
+Name                    | Optional | Type        | Description
+----------------------- | -------- | ----------- | -----------
+nqn                     | Required | string      | Subsystem NQN
+nsid                    | Optional | number      | Namespace ID. Defaults to 0.
+flags                   | Optional | number      | Pause operation flags. Defaults to 0.
+tgt_name                | Optional | string      | Parent NVMe-oF target name.
+
+#### Example
+
+Example request:
+
+~json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "nvmf_subsystem_pause_ext",
+  "params": {
+    "nqn": "nqn.2016-06.io.spdk:cnode1",
+    "nsid": 1,
+    "flags": 0
+  }
+}
+~
+
+Example response:
+
+~json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": true
+}
+~
+
+### nvmf_subsystem_resume_ext method {#rpc_nvmf_subsystem_resume_ext}
+
+Resume an NVMe-oF subsystem previously paused with `nvmf_subsystem_pause_ext`.
+
+#### Parameters
+
+Name                    | Optional | Type        | Description
+----------------------- | -------- | ----------- | -----------
+nqn                     | Required | string      | Subsystem NQN
+tgt_name                | Optional | string      | Parent NVMe-oF target name.
+
+#### Example
+
+Example request:
+
+~json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "nvmf_subsystem_resume_ext",
+  "params": {
+    "nqn": "nqn.2016-06.io.spdk:cnode1"
+  }
+}
+~
+
+Example response:
+
+~json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": true
+}
+~
+
 ### nvmf_subsystem_add_host method {#rpc_nvmf_subsystem_add_host}
 
 Add a host NQN to the list of allowed hosts.  Adding an already allowed host will result in an
