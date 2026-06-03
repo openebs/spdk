@@ -4492,6 +4492,72 @@
       ]
     },
     {
+      "name": "nvmf_subsystem_set_pause_timeout",
+      "private": true,
+      "params": [
+        {
+          "name": "nqn",
+          "type": "string",
+          "required": true,
+          "description": "Subsystem NQN"
+        },
+        {
+          "name": "pause_timeout_sec",
+          "type": "uint32",
+          "required": true,
+          "description": "Pause timeout in seconds after which the subsystem is automatically resumed"
+        }
+      ]
+    },
+    {
+      "name": "nvmf_subsystem_pause_ext",
+      "private": true,
+      "decoder": "rpc_pause_ext_decoders",
+      "params": [
+        {
+          "name": "nqn",
+          "type": "string",
+          "required": true,
+          "description": "Subsystem NQN"
+        },
+        {
+          "name": "nsid",
+          "type": "uint32",
+          "required": true,
+          "description": "Namespace ID to pause (0 for the whole subsystem)"
+        },
+        {
+          "name": "flags",
+          "type": "uint32",
+          "required": true,
+          "description": "Vendor specific pause flags"
+        },
+        {
+          "name": "tgt_name",
+          "type": "string",
+          "description": "Parent NVMe-oF target name."
+        }
+      ]
+    },
+    {
+      "name": "nvmf_subsystem_resume_ext",
+      "private": true,
+      "decoder": "rpc_resume_ext_decoders",
+      "params": [
+        {
+          "name": "nqn",
+          "type": "string",
+          "required": true,
+          "description": "Subsystem NQN"
+        },
+        {
+          "name": "tgt_name",
+          "type": "string",
+          "description": "Parent NVMe-oF target name."
+        }
+      ]
+    },
+    {
       "name": "nvmf_ns_add_host",
       "params": [
         {
