@@ -187,9 +187,6 @@ bs_allocate_cluster(struct spdk_blob *blob, uint32_t cluster_num,
 
 	assert(spdk_spin_held(&blob->bs->used_lock));
 
-	/* Reset cache of used clusters */
-	blob->num_used_clusters_cache = 0;
-
 	*cluster = bs_claim_cluster(blob->bs);
 	if (*cluster == UINT32_MAX) {
 		/* No more free clusters. Cannot satisfy the request */
@@ -274,7 +271,7 @@ spdk_blob_get_num_clusters_ancestors(struct spdk_blob_store *bs, struct spdk_blo
 			return -ENXIO;
 		}
 
-		clusters += spdk_blob_calc_used_clusters(b);
+		clusters += b->active.num_allocated_clusters;
 	}
 
 	*num_clusters = clusters;
@@ -6354,50 +6351,6 @@ uint64_t
 spdk_blob_get_next_unallocated_io_unit(struct spdk_blob *blob, uint64_t offset)
 {
 	return blob_find_io_unit(blob, offset, false);
-}
-
-uint64_t
-spdk_blob_calc_used_clusters(struct spdk_blob *blob)
-{
-	size_t i;
-	uint64_t num;
-
-	assert(blob != NULL);
-
-	if (!spdk_blob_is_thin_provisioned(blob)) {
-		return spdk_blob_get_num_clusters(blob);
-	}
-
-	spdk_spin_lock(&blob->bs->used_lock);
-
-	if (blob->num_used_clusters_cache > 0) {
-		num = blob->num_used_clusters_cache;
-		spdk_spin_unlock(&blob->bs->used_lock);
-		return num;
-	}
-
-	num = 0;
-	for (i = 0; i < blob->active.cluster_array_size; ++i) {
-		if (blob->active.clusters[i] != 0) {
-			++num;
-		}
-	}
-	blob->num_used_clusters_cache = num;
-
-	spdk_spin_unlock(&blob->bs->used_lock);
-
-	return num;
-}
-
-void
-spdk_blob_reset_used_clusters_cache(struct spdk_blob *blob)
-{
-	assert(blob != NULL);
-	if (spdk_blob_is_thin_provisioned(blob)) {
-		spdk_spin_lock(&blob->bs->used_lock);
-		blob->num_used_clusters_cache = 0;
-		spdk_spin_unlock(&blob->bs->used_lock);
-	}
 }
 
 struct spdk_blob_bitmap_ctx {
