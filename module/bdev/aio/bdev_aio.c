@@ -25,6 +25,10 @@
 
 #ifndef __FreeBSD__
 #include <libaio.h>
+#include <linux/fs.h>
+#include <sys/ioctl.h>
+#include <sys/sysmacros.h>
+#include <sched.h>
 #endif
 
 /* It's not safe to always assume RWF_NOWAIT is supported by a block device.
@@ -89,6 +93,9 @@ struct bdev_aio_task {
 	struct bdev_aio_io_channel	*ch;
 };
 
+/* Maps an UNMAP/WRITE_ZEROES range to a backing syscall (ioctl or fallocate). */
+typedef int (*aio_range_fn)(int fd, uint64_t range[2]);
+
 struct file_disk {
 	struct bdev_aio_task	*reset_task;
 	struct spdk_poller	*reset_retry_timer;
@@ -102,6 +109,8 @@ struct file_disk {
 	bool			block_size_override;
 	bool			readonly;
 	bool			fallocate;
+	aio_range_fn		unmap;
+	aio_range_fn		zero;
 
 	bool			hot_remove_in_progress;
 };
@@ -149,6 +158,193 @@ static struct spdk_bdev_module aio_if = {
 };
 
 SPDK_BDEV_MODULE_REGISTER(aio, &aio_if)
+
+#ifndef __FreeBSD__
+
+/*
+ * Asynchronous offload of blocking range operations (UNMAP / WRITE_ZEROES).
+ *
+ * fallocate() and ioctl(BLKDISCARD)/ioctl(BLKZEROOUT) run synchronously in the
+ * kernel and can block for tens to hundreds of milliseconds (longer for a whole-
+ * device discard). Running them inline on the SPDK reactor stalls every other
+ * volume sharing that core - the reason aio-bdev trim was historically left off.
+ * Instead we hand each range op to a single worker thread pinned off the reactor
+ * cores and complete the bdev_io back on the originating thread via
+ * spdk_thread_send_msg(). This revives the reverted openebs/spdk#11.
+ */
+
+struct aio_offload_req {
+	struct spdk_bdev_io	*bdev_io;
+	struct spdk_thread	*orig_thread;
+	int			fd;
+	aio_range_fn		fn;
+	uint64_t		range[2];	/* {offset_bytes, length_bytes} */
+	int			result;		/* 0 on success, -errno on failure */
+};
+
+#define AIO_OFFLOAD_RING_SIZE	1024
+#define AIO_OFFLOAD_BATCH	64
+
+static struct spdk_ring		*g_aio_offload_ring;
+static pthread_t		g_aio_offload_thread;
+static pthread_mutex_t		g_aio_offload_mutex;
+static pthread_cond_t		g_aio_offload_cond;
+static bool			g_aio_offload_exit;
+
+static void
+aio_offload_complete(void *arg)
+{
+	struct aio_offload_req *req = arg;
+
+	if (req->result == 0) {
+		spdk_bdev_io_complete(req->bdev_io, SPDK_BDEV_IO_STATUS_SUCCESS);
+	} else {
+		spdk_bdev_io_complete_aio_status(req->bdev_io, req->result);
+	}
+
+	free(req);
+}
+
+static void
+aio_offload_execute(struct aio_offload_req *req)
+{
+	int rc = req->fn(req->fd, req->range);
+
+	req->result = (rc == 0) ? 0 : -errno;
+
+	/* Completion must run on the SPDK thread that submitted the bdev_io. */
+	spdk_thread_send_msg(req->orig_thread, aio_offload_complete, req);
+}
+
+static void *
+aio_offload_worker(void *arg)
+{
+	void *msgs[AIO_OFFLOAD_BATCH];
+	size_t count, i;
+
+	pthread_mutex_lock(&g_aio_offload_mutex);
+
+	for (;;) {
+		for (;;) {
+			count = spdk_ring_dequeue(g_aio_offload_ring, msgs, AIO_OFFLOAD_BATCH);
+			if (count == 0) {
+				break;
+			}
+
+			pthread_mutex_unlock(&g_aio_offload_mutex);
+			for (i = 0; i < count; i++) {
+				aio_offload_execute(msgs[i]);
+			}
+			pthread_mutex_lock(&g_aio_offload_mutex);
+		}
+
+		if (g_aio_offload_exit) {
+			break;
+		}
+
+		pthread_cond_wait(&g_aio_offload_cond, &g_aio_offload_mutex);
+	}
+
+	pthread_mutex_unlock(&g_aio_offload_mutex);
+
+	return NULL;
+}
+
+static int
+aio_offload_submit(struct aio_offload_req *req)
+{
+	size_t count = spdk_ring_count(g_aio_offload_ring);
+
+	if (spdk_ring_enqueue(g_aio_offload_ring, (void **)&req, 1, NULL) == 0) {
+		return -1;
+	}
+
+	/* Wake the worker only on the empty->non-empty transition. */
+	if (count == 0) {
+		pthread_mutex_lock(&g_aio_offload_mutex);
+		pthread_cond_signal(&g_aio_offload_cond);
+		pthread_mutex_unlock(&g_aio_offload_mutex);
+	}
+
+	return 0;
+}
+
+/* Pin the worker to the cores SPDK is NOT using for its reactors. */
+static void
+aio_offload_set_affinity(pthread_attr_t *attr)
+{
+	cpu_set_t cpuset;
+	unsigned i, cores;
+
+	CPU_ZERO(&cpuset);
+
+	cores = sysconf(_SC_NPROCESSORS_CONF);
+	for (i = 0; i < cores; i++) {
+		CPU_SET(i, &cpuset);
+	}
+
+	SPDK_ENV_FOREACH_CORE(i) {
+		CPU_CLR(i, &cpuset);
+	}
+
+	if (CPU_COUNT(&cpuset) > 0) {
+		pthread_attr_setaffinity_np(attr, sizeof(cpu_set_t), &cpuset);
+	}
+}
+
+static int
+aio_offload_init(void)
+{
+	pthread_attr_t attr;
+	int rc;
+
+	g_aio_offload_ring = spdk_ring_create(SPDK_RING_TYPE_MP_SC, AIO_OFFLOAD_RING_SIZE,
+					      SPDK_ENV_SOCKET_ID_ANY);
+	if (g_aio_offload_ring == NULL) {
+		return -ENOMEM;
+	}
+
+	g_aio_offload_exit = false;
+	pthread_mutex_init(&g_aio_offload_mutex, NULL);
+	pthread_cond_init(&g_aio_offload_cond, NULL);
+
+	pthread_attr_init(&attr);
+	aio_offload_set_affinity(&attr);
+	rc = pthread_create(&g_aio_offload_thread, &attr, aio_offload_worker, NULL);
+	pthread_attr_destroy(&attr);
+
+	if (rc != 0) {
+		spdk_ring_free(g_aio_offload_ring);
+		g_aio_offload_ring = NULL;
+		pthread_cond_destroy(&g_aio_offload_cond);
+		pthread_mutex_destroy(&g_aio_offload_mutex);
+		return -rc;
+	}
+
+	return 0;
+}
+
+static void
+aio_offload_fini(void)
+{
+	if (g_aio_offload_ring == NULL) {
+		return;
+	}
+
+	pthread_mutex_lock(&g_aio_offload_mutex);
+	g_aio_offload_exit = true;
+	pthread_cond_signal(&g_aio_offload_cond);
+	pthread_mutex_unlock(&g_aio_offload_mutex);
+
+	pthread_join(g_aio_offload_thread, NULL);
+
+	spdk_ring_free(g_aio_offload_ring);
+	g_aio_offload_ring = NULL;
+	pthread_cond_destroy(&g_aio_offload_cond);
+	pthread_mutex_destroy(&g_aio_offload_mutex);
+}
+
+#endif /* __FreeBSD__ */
 
 static int
 bdev_aio_open(struct file_disk *disk)
@@ -303,43 +499,150 @@ bdev_aio_flush(struct file_disk *fdisk, struct bdev_aio_task *aio_task)
 }
 
 #ifndef __FreeBSD__
-static void
-bdev_aio_fallocate(struct spdk_bdev_io *bdev_io, int mode)
+/* Zero/free a range of a (sparse) file by punching a hole; reads back as zeros. */
+static int
+aio_range_fallocate_punch(int fd, uint64_t range[2])
 {
-	struct file_disk *fdisk = fdisk_from_bdev(bdev_io->bdev);
-	struct bdev_aio_task *aio_task = (struct bdev_aio_task *)bdev_io->driver_ctx;
-	uint64_t offset_bytes = bdev_io->u.bdev.offset_blocks * bdev_io->bdev->blocklen;
-	uint64_t length_bytes = bdev_io->u.bdev.num_blocks * bdev_io->bdev->blocklen;
-	int rc;
+	return fallocate(fd, FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE, range[0], range[1]);
+}
 
-	if (!fdisk->fallocate) {
-		spdk_bdev_io_complete_aio_status(spdk_bdev_io_from_ctx(aio_task), -ENOTSUP);
+/* Discard a range of a block device (the device deallocates the blocks). */
+static int
+aio_range_blkdiscard(int fd, uint64_t range[2])
+{
+	return ioctl(fd, BLKDISCARD, range);
+}
+
+/* Zero a range of a block device (may deallocate; always reads back as zeros). */
+static int
+aio_range_blkzeroout(int fd, uint64_t range[2])
+{
+	return ioctl(fd, BLKZEROOUT, range);
+}
+
+/*
+ * Read a block device's queue limit (e.g. discard_max_bytes) from sysfs, or 0
+ * if it cannot be determined. Used to advertise only the trim operations the
+ * device actually supports.
+ */
+static uint64_t
+aio_dev_queue_limit(const struct stat *st, const char *attr)
+{
+	char path[64];
+	char buf[32];
+	int fd;
+	ssize_t n;
+
+	snprintf(path, sizeof(path), "/sys/dev/block/%u:%u/queue/%s",
+		 major(st->st_rdev), minor(st->st_rdev), attr);
+	fd = open(path, O_RDONLY);
+	if (fd < 0) {
+		return 0;
+	}
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0) {
+		return 0;
+	}
+	buf[n] = '\0';
+	return strtoull(buf, NULL, 10);
+}
+
+/*
+ * Decide, once at open time, how UNMAP and WRITE_ZEROES map to syscalls for this
+ * backing store. Only wired up when the operator opted in via fallocate=true (the
+ * io-engine side opts in only after probing that the backing store supports it).
+ * Leaving disk->unmap / disk->zero NULL means that io type is not advertised.
+ *   - block device: UNMAP -> BLKDISCARD, WRITE_ZEROES -> BLKZEROOUT, each
+ *     advertised only when the device's queue limits report support
+ *   - regular file:  UNMAP / WRITE_ZEROES -> fallocate(PUNCH_HOLE)
+ */
+static void
+set_aio_range_functions(struct file_disk *disk)
+{
+	struct stat st;
+
+	disk->unmap = NULL;
+	disk->zero = NULL;
+
+	if (!disk->fallocate) {
 		return;
 	}
 
-	rc = fallocate(fdisk->fd, mode, offset_bytes, length_bytes);
-	if (rc == 0) {
-		spdk_bdev_io_complete(spdk_bdev_io_from_ctx(aio_task), SPDK_BDEV_IO_STATUS_SUCCESS);
+	if (fstat(disk->fd, &st) < 0) {
+		AIO_FDISK_ERRLOG(disk, "fstat() failed, errno %d: %s\n", errno, spdk_strerror(errno));
+		return;
+	}
+
+	if (S_ISBLK(st.st_mode)) {
+		/* Advertise each op only where the device supports it, so UNMAP works on
+		 * discard-only devices and WRITE_ZEROES is not offered where BLKZEROOUT
+		 * would fail. */
+		if (aio_dev_queue_limit(&st, "discard_max_bytes") > 0) {
+			disk->unmap = aio_range_blkdiscard;
+		}
+		if (aio_dev_queue_limit(&st, "write_zeroes_max_bytes") > 0) {
+			disk->zero = aio_range_blkzeroout;
+		}
+		AIO_FDISK_NOTICELOG(disk, "trim (block device): unmap=%s, zero=%s\n",
+				    disk->unmap ? "BLKDISCARD" : "unsupported",
+				    disk->zero ? "BLKZEROOUT" : "unsupported");
 	} else {
-		spdk_bdev_io_complete_aio_status(spdk_bdev_io_from_ctx(aio_task), -errno);
+		disk->unmap = aio_range_fallocate_punch;
+		disk->zero = aio_range_fallocate_punch;
+		AIO_FDISK_NOTICELOG(disk, "trim enabled (file): unmap/zero=fallocate(PUNCH_HOLE)\n");
+	}
+}
+
+static void
+bdev_aio_range_offload(struct spdk_bdev_io *bdev_io, aio_range_fn fn)
+{
+	struct file_disk *fdisk = fdisk_from_bdev(bdev_io->bdev);
+	struct aio_offload_req *req;
+
+	req = calloc(1, sizeof(*req));
+	if (req == NULL) {
+		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_NOMEM);
+		return;
+	}
+
+	req->bdev_io = bdev_io;
+	req->orig_thread = spdk_get_thread();
+	req->fd = fdisk->fd;
+	req->fn = fn;
+	req->range[0] = bdev_io->u.bdev.offset_blocks * bdev_io->bdev->blocklen;
+	req->range[1] = bdev_io->u.bdev.num_blocks * bdev_io->bdev->blocklen;
+
+	if (aio_offload_submit(req) < 0) {
+		free(req);
+		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_NOMEM);
 	}
 }
 
 static void
 bdev_aio_unmap(struct spdk_bdev_io *bdev_io)
 {
-	int mode = FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE;
+	struct file_disk *fdisk = fdisk_from_bdev(bdev_io->bdev);
 
-	bdev_aio_fallocate(bdev_io, mode);
+	if (fdisk->unmap == NULL) {
+		spdk_bdev_io_complete_aio_status(bdev_io, -ENOTSUP);
+		return;
+	}
+
+	bdev_aio_range_offload(bdev_io, fdisk->unmap);
 }
-
 
 static void
 bdev_aio_write_zeros(struct spdk_bdev_io *bdev_io)
 {
-	int mode = FALLOC_FL_ZERO_RANGE;
+	struct file_disk *fdisk = fdisk_from_bdev(bdev_io->bdev);
 
-	bdev_aio_fallocate(bdev_io, mode);
+	if (fdisk->zero == NULL) {
+		spdk_bdev_io_complete_aio_status(bdev_io, -ENOTSUP);
+		return;
+	}
+
+	bdev_aio_range_offload(bdev_io, fdisk->zero);
 }
 #endif
 
@@ -772,8 +1075,10 @@ bdev_aio_io_type_supported(void *ctx, enum spdk_bdev_io_type io_type)
 		return true;
 
 	case SPDK_BDEV_IO_TYPE_UNMAP:
+		return fdisk->unmap != NULL;
+
 	case SPDK_BDEV_IO_TYPE_WRITE_ZEROES:
-		return fdisk->fallocate;
+		return fdisk->zero != NULL;
 
 	default:
 		return false;
@@ -1031,6 +1336,10 @@ create_aio_bdev(const char *name, const char *filename, uint32_t block_size, boo
 		goto error_return;
 	}
 
+#ifndef __FreeBSD__
+	set_aio_range_functions(fdisk);
+#endif
+
 	disk_size = spdk_fd_get_size(fdisk->fd);
 
 	fdisk->disk.product_name = "AIO disk";
@@ -1212,12 +1521,23 @@ bdev_aio_initialize(void)
 	spdk_io_device_register(&aio_if, bdev_aio_group_create_cb, bdev_aio_group_destroy_cb,
 				sizeof(struct bdev_aio_group_channel), "aio_module");
 
+#ifndef __FreeBSD__
+	if (aio_offload_init() < 0) {
+		SPDK_ERRLOG("Failed to start the aio unmap/write-zeroes offload worker\n");
+		spdk_io_device_unregister(&aio_if, NULL);
+		return -1;
+	}
+#endif
+
 	return 0;
 }
 
 static void
 bdev_aio_fini(void)
 {
+#ifndef __FreeBSD__
+	aio_offload_fini();
+#endif
 	spdk_io_device_unregister(&aio_if, NULL);
 }
 
