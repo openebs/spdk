@@ -21,6 +21,10 @@
 #include "spdk/log.h"
 #include "spdk_internal/uring.h"
 
+#include <linux/falloc.h>
+#include <linux/loop.h>
+#include <sys/sysmacros.h>
+
 #ifdef SPDK_CONFIG_URING_ZNS
 #include <linux/blkzoned.h>
 #define SECTOR_SHIFT 9
@@ -80,6 +84,12 @@ struct bdev_uring {
 	struct bdev_uring_zoned_dev	zd;
 	char			*filename;
 	int			fd;
+	/* Whether UNMAP / WRITE_ZEROES are advertised, and (for UNMAP) whether the
+	 * backing is a block device, so the syscall path can be chosen: files use
+	 * IORING_OP_FALLOCATE(PUNCH_HOLE), block devices use BLOCK_URING_CMD_DISCARD. */
+	bool			unmap;
+	bool			zero;
+	bool			is_blkdev;
 	TAILQ_ENTRY(bdev_uring)  link;
 
 	bool			hot_remove_in_progress;
@@ -89,6 +99,10 @@ static int bdev_uring_init(void);
 static void bdev_uring_fini(void);
 static void uring_free_bdev(struct bdev_uring *uring);
 static TAILQ_HEAD(, bdev_uring) g_uring_bdev_head = TAILQ_HEAD_INITIALIZER(g_uring_bdev_head);
+
+/* Kernel support for BLOCK_URING_CMD_DISCARD (Linux 6.12+): -1 unprobed, 0 no, 1 yes.
+ * Probed at most once, on the first block-device uring bdev, never in the I/O path. */
+static int g_uring_blk_discard = -1;
 
 #define SPDK_URING_QUEUE_DEPTH 512
 #define MAX_EVENTS_PER_POLL 32
@@ -285,6 +299,191 @@ bdev_uring_writev(struct bdev_uring *uring, struct spdk_io_channel *ch,
 
 	group_ch->io_pending++;
 	return nbytes;
+}
+
+/*
+ * Submit an async UNMAP or WRITE_ZEROES via IORING_OP_FALLOCATE on the existing
+ * ring. io_uring is natively async, so no worker thread is needed and the
+ * completion is reaped by bdev_uring_reap alongside reads and writes. fallocate
+ * completes with res == 0 on success, so len is recorded as 0 for the reaper.
+ */
+static int64_t
+bdev_uring_fallocate(struct bdev_uring *uring, struct spdk_io_channel *ch,
+		     struct spdk_bdev_io *bdev_io, int mode)
+{
+	struct bdev_uring_task *uring_task = (struct bdev_uring_task *)bdev_io->driver_ctx;
+	struct bdev_uring_io_channel *uring_ch = spdk_io_channel_get_ctx(ch);
+	struct bdev_uring_group_channel *group_ch = uring_ch->group_ch;
+	struct io_uring_sqe *sqe;
+
+	sqe = io_uring_get_sqe(&group_ch->uring);
+	if (!sqe) {
+		URING_DEBUGLOG(uring, "get sqe failed as out of resource\n");
+		return -ENOMEM;
+	}
+
+	io_uring_prep_fallocate(sqe, uring->fd, mode,
+				bdev_io->u.bdev.offset_blocks * bdev_io->bdev->blocklen,
+				bdev_io->u.bdev.num_blocks * bdev_io->bdev->blocklen);
+	io_uring_sqe_set_data(sqe, uring_task);
+	uring_task->len = 0;
+	uring_task->ch = uring_ch;
+
+	group_ch->io_pending++;
+	return 0;
+}
+
+/* Block-device UNMAP via BLOCK_URING_CMD_DISCARD (Linux 6.12+), reaped like the
+ * others. Completes with res == 0 on success, so len is recorded as 0. */
+static int64_t
+bdev_uring_cmd_discard(struct bdev_uring *uring, struct spdk_io_channel *ch,
+		       struct spdk_bdev_io *bdev_io)
+{
+	struct bdev_uring_task *uring_task = (struct bdev_uring_task *)bdev_io->driver_ctx;
+	struct bdev_uring_io_channel *uring_ch = spdk_io_channel_get_ctx(ch);
+	struct bdev_uring_group_channel *group_ch = uring_ch->group_ch;
+	struct io_uring_sqe *sqe;
+
+	sqe = io_uring_get_sqe(&group_ch->uring);
+	if (!sqe) {
+		URING_DEBUGLOG(uring, "get sqe failed as out of resource\n");
+		return -ENOMEM;
+	}
+
+	io_uring_prep_cmd_discard(sqe, uring->fd,
+				  bdev_io->u.bdev.offset_blocks * bdev_io->bdev->blocklen,
+				  bdev_io->u.bdev.num_blocks * bdev_io->bdev->blocklen);
+	io_uring_sqe_set_data(sqe, uring_task);
+	uring_task->len = 0;
+	uring_task->ch = uring_ch;
+
+	group_ch->io_pending++;
+	return 0;
+}
+
+/*
+ * Probe, at most once, whether this kernel supports BLOCK_URING_CMD_DISCARD
+ * (6.12+). Support is a property of the kernel, not of any particular device
+ * (every block device routes through the same blkdev_uring_cmd handler), so it
+ * is checked on a disposable loop device rather than by issuing a destructive
+ * discard on a real backing store. A zero-length discard cannot be used to
+ * probe: the kernel rejects len == 0 with -EINVAL on every version, so only a
+ * real, aligned discard returning 0 distinguishes a kernel that supports the
+ * command (e.g. stable 6.12) from one that rejects it (observed on a
+ * bleeding-edge io_uring development tree that reports a newer version). Cached
+ * globally, so it runs only on the first block-device uring bdev, never in the
+ * I/O path.
+ */
+static bool
+bdev_uring_blk_discard_supported(void)
+{
+	char backing[] = "/tmp/spdk_uring_discard_probe.XXXXXX";
+	char loopname[32];
+	struct io_uring ring;
+	struct io_uring_sqe *sqe;
+	struct io_uring_cqe *cqe;
+	int lctl = -1, loopfd = -1, backfd = -1, devnr;
+	bool ring_ok = false;
+
+	if (g_uring_blk_discard >= 0) {
+		return g_uring_blk_discard;
+	}
+	g_uring_blk_discard = 0;
+
+	backfd = mkstemp(backing);
+	if (backfd < 0) {
+		SPDK_NOTICELOG("uring: discard probe: mkstemp failed (errno %d); "
+			       "block-device discard disabled\n", errno);
+		return false;
+	}
+	unlink(backing);				/* anonymous; freed on close */
+	if (ftruncate(backfd, 1 << 20) != 0) {		/* 1 MiB backing store */
+		goto out;
+	}
+
+	lctl = open("/dev/loop-control", O_RDWR | O_CLOEXEC);
+	if (lctl < 0) {
+		SPDK_NOTICELOG("uring: discard probe: /dev/loop-control unavailable "
+			       "(errno %d); block-device discard disabled\n", errno);
+		goto out;
+	}
+	devnr = ioctl(lctl, LOOP_CTL_GET_FREE);
+	if (devnr < 0) {
+		goto out;
+	}
+	snprintf(loopname, sizeof(loopname), "/dev/loop%d", devnr);
+	/* O_DIRECT is unsupported on some backing filesystems (e.g. tmpfs); the
+	 * discard transfers no data, so plain buffered access probes identically. */
+	loopfd = open(loopname, O_RDWR | O_CLOEXEC);
+	if (loopfd < 0 || ioctl(loopfd, LOOP_SET_FD, backfd) != 0) {
+		goto out;
+	}
+
+	if (io_uring_queue_init(1, &ring, 0) == 0) {
+		ring_ok = true;
+		sqe = io_uring_get_sqe(&ring);
+		if (sqe != NULL) {
+			/* real, aligned, single-block discard: the only submission a
+			 * working kernel completes with res == 0 */
+			io_uring_prep_cmd_discard(sqe, loopfd, 0, 512);
+			if (io_uring_submit(&ring) == 1 &&
+			    io_uring_wait_cqe(&ring, &cqe) == 0) {
+				g_uring_blk_discard = (cqe->res == 0) ? 1 : 0;
+				SPDK_NOTICELOG("uring: BLOCK_URING_CMD_DISCARD kernel probe "
+					       "res=%d; block-device discard %s\n", cqe->res,
+					       g_uring_blk_discard ? "enabled" : "disabled");
+				io_uring_cqe_seen(&ring, cqe);
+			}
+		}
+	}
+
+out:
+	if (ring_ok) {
+		io_uring_queue_exit(&ring);
+	}
+	if (loopfd >= 0) {
+		ioctl(loopfd, LOOP_CLR_FD, 0);
+		close(loopfd);
+	}
+	if (lctl >= 0) {
+		close(lctl);
+	}
+	if (backfd >= 0) {
+		close(backfd);
+	}
+	return g_uring_blk_discard;
+}
+
+/*
+ * Whether a specific block device advertises discard support, via
+ * queue/discard_max_bytes. Non-destructive; gates per-device so UNMAP is never
+ * advertised on a disk the kernel would reject with -EOPNOTSUPP.
+ */
+static bool
+bdev_uring_dev_supports_discard(int fd)
+{
+	struct stat st;
+	char path[64];
+	char buf[32];
+	int sfd;
+	ssize_t n;
+
+	if (fstat(fd, &st) != 0 || !S_ISBLK(st.st_mode)) {
+		return false;
+	}
+	snprintf(path, sizeof(path), "/sys/dev/block/%u:%u/queue/discard_max_bytes",
+		 major(st.st_rdev), minor(st.st_rdev));
+	sfd = open(path, O_RDONLY);
+	if (sfd < 0) {
+		return false;
+	}
+	n = read(sfd, buf, sizeof(buf) - 1);
+	close(sfd);
+	if (n <= 0) {
+		return false;
+	}
+	buf[n] = '\0';
+	return strtoull(buf, NULL, 10) > 0;
 }
 
 static int
@@ -702,6 +901,7 @@ bdev_uring_check_zoned_support(struct bdev_uring *uring, const char *name, const
 static int
 _bdev_uring_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_io)
 {
+	struct bdev_uring *uring = uring_from_bdev(bdev_io->bdev);
 
 	switch (bdev_io->type) {
 	case SPDK_BDEV_IO_TYPE_GET_ZONE_INFO:
@@ -715,6 +915,21 @@ _bdev_uring_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev
 	case SPDK_BDEV_IO_TYPE_WRITE:
 		spdk_bdev_io_get_buf(bdev_io, bdev_uring_get_buf_cb,
 				     bdev_io->u.bdev.num_blocks * bdev_io->bdev->blocklen);
+		return 0;
+	case SPDK_BDEV_IO_TYPE_UNMAP: {
+		int64_t rc = uring->is_blkdev ?
+			     bdev_uring_cmd_discard(uring, ch, bdev_io) :
+			     bdev_uring_fallocate(uring, ch, bdev_io,
+						  FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE);
+		if (rc == -ENOMEM) {
+			spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_NOMEM);
+		}
+		return 0;
+	}
+	case SPDK_BDEV_IO_TYPE_WRITE_ZEROES:
+		if (bdev_uring_fallocate(uring, ch, bdev_io, FALLOC_FL_ZERO_RANGE) == -ENOMEM) {
+			spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_NOMEM);
+		}
 		return 0;
 	default:
 		return -1;
@@ -740,6 +955,10 @@ bdev_uring_io_type_supported(void *ctx, enum spdk_bdev_io_type io_type)
 	case SPDK_BDEV_IO_TYPE_READ:
 	case SPDK_BDEV_IO_TYPE_WRITE:
 		return true;
+	case SPDK_BDEV_IO_TYPE_UNMAP:
+		return ((struct bdev_uring *)ctx)->unmap;
+	case SPDK_BDEV_IO_TYPE_WRITE_ZEROES:
+		return ((struct bdev_uring *)ctx)->zero;
 	default:
 		return false;
 	}
@@ -860,6 +1079,7 @@ create_uring_bdev(const struct bdev_uring_opts *opts)
 	uint64_t bdev_size;
 	int rc;
 	uint32_t block_size = opts->block_size;
+	struct stat st;
 
 	uring = calloc(1, sizeof(*uring));
 	if (!uring) {
@@ -879,6 +1099,21 @@ create_uring_bdev(const struct bdev_uring_opts *opts)
 
 	if (bdev_uring_open(uring)) {
 		goto error_return;
+	}
+
+	/* Files: UNMAP/WRITE_ZEROES via fallocate (punch-hole / zero-range), always
+	 * available above the 5.13 uring floor. Block devices: UNMAP via
+	 * BLOCK_URING_CMD_DISCARD when the kernel supports it (probed once); there is
+	 * no io_uring write-zeroes op for block devices, so that stays file-only. */
+	if (fstat(uring->fd, &st) == 0) {
+		if (S_ISREG(st.st_mode)) {
+			uring->unmap = true;
+			uring->zero = true;
+		} else if (S_ISBLK(st.st_mode)) {
+			uring->is_blkdev = true;
+			uring->unmap = bdev_uring_blk_discard_supported() &&
+				       bdev_uring_dev_supports_discard(uring->fd);
+		}
 	}
 
 	bdev_size = spdk_fd_get_size(uring->fd);
