@@ -1449,7 +1449,16 @@ void	nvme_ns_free_kv_specific_data(struct spdk_nvme_ns *ns);
 void	nvme_ns_free_nvm_specific_data(struct spdk_nvme_ns *ns);
 void	nvme_ns_free_iocs_specific_data(struct spdk_nvme_ns *ns);
 bool	nvme_ns_has_supported_iocs_specific_data(struct spdk_nvme_ns *ns);
-int	nvme_ns_identify(struct spdk_nvme_ns *ns);
+/*
+ * Hidden on purpose: libnvme.so exports an unrelated function with the same
+ * name, int nvme_ns_identify(nvme_ns_t n, struct nvme_id_ns *ns). When SPDK is
+ * linked statically into an executable that also loads libnvme, the linker
+ * would export this symbol and libnvme's internal calls would resolve to it
+ * instead of its own definition. Hidden visibility keeps it out of the dynamic
+ * symbol table; calls from within SPDK still resolve at static link time.
+ * NOTE: We may not raise upstream patch for this
+ */
+int	nvme_ns_identify(struct spdk_nvme_ns *ns) __attribute__((visibility("hidden")));
 void	nvme_ns_clear(struct spdk_nvme_ns *ns);
 int	nvme_ns_cmd_zone_append_with_md(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
 					void *buffer, void *metadata, uint64_t zslba,
